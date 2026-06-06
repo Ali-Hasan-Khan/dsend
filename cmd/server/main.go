@@ -2,20 +2,32 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
+	"time"
 )
 
 const (
-	nProducers    int = 5
-	nConsumers    int = 3
-	queueCapacity int = 20
+	nProducers      int = 50
+	nConsumers      int = 50
+	queueCapacity   int = 10
+	nMsgPerProducer int = 10000
 )
 
+type Message struct {
+	ID        string
+	Payload   []byte
+	Timestamp time.Time
+}
+
 type Queue struct {
-	messages []string
-	mu       sync.Mutex
-	closed   bool
+	messages []Message
 	cap      int
+	size     int
+	head     int
+	tail     int
+	closed   bool
+	mu       sync.Mutex
 
 	condProd *sync.Cond
 	condCons *sync.Cond
@@ -23,9 +35,12 @@ type Queue struct {
 
 func NewQueue(capacity int) *Queue {
 	q := &Queue{
-		messages: make([]string, 0, capacity),
-		closed:   false,
+		messages: make([]Message, capacity),
 		cap:      capacity,
+		size:     0,
+		head:     0,
+		tail:     0,
+		closed:   false,
 	}
 
 	q.condProd = sync.NewCond(&q.mu)
@@ -45,9 +60,15 @@ func main() {
 		wg1.Add(1)
 		go func(id int) {
 			defer wg1.Done()
-			for msg := 1; msg <= 100; msg++ {
+			for msg := 1; msg <= nMsgPerProducer; msg++ {
+				currID := (id-1)*nMsgPerProducer + msg
 				msgStr := fmt.Sprintf("producer-%d-msg-%d", id, msg)
-				queue.Push(msgStr)
+				message := Message{
+					ID:        strconv.Itoa(currID),
+					Payload:   []byte(msgStr),
+					Timestamp: time.Now(),
+				}
+				queue.Push(message)
 			}
 		}(i)
 	}
@@ -62,7 +83,7 @@ func main() {
 					break
 				}
 				pLock.Lock()
-				processedMessages[value] += 1
+				processedMessages[value.ID] += 1
 				pLock.Unlock()
 			}
 		}(i)
@@ -72,15 +93,16 @@ func main() {
 	wg2.Wait()
 
 	var totalConsumed = 0
-	var hasDuplicates bool
+	var duplicates = 0
 	for _, c := range processedMessages {
 		totalConsumed += c
 		if c > 1 {
-			hasDuplicates = true
+			duplicates+=(c-1)
 		}
 	}
-	fmt.Println("Total messages consumed:", totalConsumed)
-	fmt.Println("Duplicate messages detected:", hasDuplicates)
+	fmt.Println("Messages consumed:", totalConsumed)
+	fmt.Println("Messages lost:", (nProducers*nMsgPerProducer)-len(processedMessages))
+	fmt.Println("Messages duplicated:", duplicates)
 }
 
 func (q *Queue) Close() {
@@ -94,34 +116,37 @@ func (q *Queue) Close() {
 func (q *Queue) Size() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	var size = len(q.messages)
-	return size
+	return q.size
 }
 
-func (q *Queue) Push(item string) {
+func (q *Queue) Push(item Message) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	for !q.closed && len(q.messages) == q.cap {
+	for !q.closed && q.size == q.cap {
 		q.condProd.Wait()
 	}
 	if q.closed {
 		return
 	}
-	q.messages = append(q.messages, item)
+	q.messages[q.tail] = item
+	q.tail = (q.tail + 1) % q.cap
+	q.size++
 	q.condCons.Signal()
 }
 
-func (q *Queue) Pop() (string, bool) {
+func (q *Queue) Pop() (Message, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	for len(q.messages) == 0 && !q.closed {
+	for !q.closed && q.size == 0 {
 		q.condCons.Wait()
 	}
-	if len(q.messages) == 0 && q.closed {
-		return "", false
+	if q.closed && q.size == 0 {
+		return Message{}, false
 	}
-	item := q.messages[0]
-	q.messages = q.messages[1:]
+	item := q.messages[q.head]
+	q.messages[q.head] = Message{}
+	q.head = (q.head + 1) % q.cap
+	q.size--
 	q.condProd.Signal()
 	return item, true
 }
