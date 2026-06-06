@@ -6,8 +6,9 @@ import (
 )
 
 const (
-	nProducers int = 5
-	nConsumers int = 3
+	nProducers    int = 5
+	nConsumers    int = 3
+	queueCapacity int = 20
 )
 
 type Queue struct {
@@ -20,15 +21,20 @@ type Queue struct {
 	condCons *sync.Cond
 }
 
-func main() {
-	var queue = &Queue{
-		messages: make([]string, 0),
+func NewQueue(capacity int) *Queue {
+	q := &Queue{
+		messages: make([]string, 0, capacity),
 		closed:   false,
-		cap:      20,
+		cap:      capacity,
 	}
 
-	queue.condProd = sync.NewCond(&queue.mu)
-	queue.condCons = sync.NewCond(&queue.mu)
+	q.condProd = sync.NewCond(&q.mu)
+	q.condCons = sync.NewCond(&q.mu)
+	return q
+}
+
+func main() {
+	queue := NewQueue(queueCapacity)
 
 	processedMessages := make(map[string]int)
 	var pLock sync.Mutex
