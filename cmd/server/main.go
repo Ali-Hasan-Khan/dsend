@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -43,14 +45,30 @@ type Queue struct {
 
 	inFlight        map[string]InFlightMessage // inflight hashmap
 	deadLetterQueue []Message                  // dead letter queue
+
+	ackedCount    int
+	producedCount int
+	dlqCount      int
 }
 
-type RemoveMessage struct {
-	idx string
-	msg Message
+type ExpiredDelivery struct {
+	token   string
+	message Message
 }
 
-func NewQueue(capacity int) *Queue {
+type Delivery struct {
+	Message
+	AckToken string
+}
+
+type Metric struct {
+	producedCount int
+	ackedCount    int
+	dlqCount      int
+	inflightCount int
+}
+
+func NewBroker(capacity int) *Queue {
 	q := &Queue{
 		readyQueue: make([]Message, capacity),
 		cap:        capacity,
@@ -67,10 +85,9 @@ func NewQueue(capacity int) *Queue {
 }
 
 func main() {
-	queue := NewQueue(queueCapacity)
+	broker := NewBroker(queueCapacity)
 
 	deliveredMessages := make(map[string]int)
-	sum := 0
 	ackMessages := make(map[string]int)
 	var pLock sync.Mutex
 
@@ -91,7 +108,7 @@ func main() {
 					Timestamp: time.Now(),
 					Retry:     0,
 				}
-				queue.Push(message)
+				broker.Push(message)
 			}
 		}(i)
 	}
@@ -100,17 +117,14 @@ func main() {
 	go func() {
 		defer wgGen.Done()
 		for {
-			pLock.Lock()
-			currentSum := sum
-			pLock.Unlock()
+			metrics := broker.GetMetrics()
 
-			queue.mu.Lock()
-			currentInflight := len(queue.inFlight)
-			isClosed := queue.closed
-			queue.mu.Unlock()
+			broker.mu.Lock()
+			isClosed := broker.closed
+			broker.mu.Unlock()
 
-			fmt.Printf("Acked count: %d\033[K\n", currentSum)
-			fmt.Printf("Inflight:    %d\033[K\n", currentInflight)
+			fmt.Printf("Acked count: %d\033[K\n", metrics.ackedCount)
+			fmt.Printf("Inflight:    %d\033[K\n", metrics.inflightCount)
 
 			// If the queue is finished, exit the print loop
 			if isClosed {
@@ -128,7 +142,7 @@ func main() {
 		go func(id int) {
 			defer wg2.Done()
 			for {
-				value, ok := queue.Pop()
+				value, ok := broker.Pop()
 				if !ok {
 					break
 				}
@@ -141,11 +155,10 @@ func main() {
 					continue
 				}
 
-				queue.Ack(value.ID)
+				broker.Ack(value.AckToken)
 
 				pLock.Lock()
 				ackMessages[value.ID]++
-				sum++
 				pLock.Unlock()
 			}
 		}(i)
@@ -154,22 +167,22 @@ func main() {
 	wgGen.Add(1)
 	go func() {
 		defer wgGen.Done()
-		for !queue.IsClosed() {
+		for !broker.IsClosed() {
 			time.Sleep(time.Second * 2)
-			queue.StartRedeliveryLoop()
+			broker.StartRedeliveryLoop()
 		}
 	}()
 
 	wg1.Wait()
 	for {
 
-		if queue.IsDone() {
+		if broker.IsDone() {
 			break
 		}
 
 		time.Sleep(time.Second)
 	}
-	queue.Close()
+	broker.Close()
 	wg2.Wait()
 	wgGen.Wait()
 	fmt.Println()
@@ -190,26 +203,26 @@ func main() {
 	fmt.Println("Messages delivered:", totalDelivered)
 	fmt.Println("Messages consumed:", totalAcks)
 	fmt.Println("Messages lost:", (nProducers*nMsgPerProducer)-len(ackMessages))
-	fmt.Println("Messages stored in DLQ:", len(queue.deadLetterQueue))
+	fmt.Println("Messages stored in DLQ:", len(broker.deadLetterQueue))
 	fmt.Println("Messages duplicated:", duplicates)
 }
 
 func (q *Queue) IsDone() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	done := len(q.inFlight) == 0 && q.size == 0
+	done := q.ackedCount+q.dlqCount == q.producedCount
 	return done
 }
 
 func (q *Queue) StartRedeliveryLoop() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	removeMessage := make([]RemoveMessage, 0)
+	removeMessage := make([]ExpiredDelivery, 0)
 	for idx, item := range q.inFlight {
 		if time.Since(item.DeliveredAt) > time.Millisecond*time.Duration(timeout) {
-			removeMessage = append(removeMessage, RemoveMessage{
-				idx: idx,
-				msg: item.Message,
+			removeMessage = append(removeMessage, ExpiredDelivery{
+				token:   idx,
+				message: item.Message,
 			})
 		}
 	}
@@ -218,18 +231,19 @@ func (q *Queue) StartRedeliveryLoop() {
 		if !q.closed && q.size == q.cap {
 			continue // if broker full, skip
 		}
-		if item.msg.Retry >= maxRetries {
-			q.deadLetterQueue = append(q.deadLetterQueue, item.msg)
-			delete(q.inFlight, item.idx)
+		if item.message.Retry >= maxRetries {
+			q.deadLetterQueue = append(q.deadLetterQueue, item.message)
+			q.dlqCount++
+			delete(q.inFlight, item.token)
 			continue
 		}
 		// repush
-		msg := item.msg
+		msg := item.message
 		msg.Retry++
 		q.enqueue(msg)
 		q.condCons.Signal()
 		// delete
-		delete(q.inFlight, item.idx)
+		delete(q.inFlight, item.token)
 	}
 
 }
@@ -264,35 +278,53 @@ func (q *Queue) Push(message Message) {
 		return
 	}
 	q.enqueue(message)
+	q.producedCount++
 	q.condCons.Signal()
 }
 
-func (q *Queue) Pop() (Message, bool) {
+func (q *Queue) Pop() (Delivery, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	for !q.closed && q.size == 0 {
 		q.condCons.Wait()
 	}
 	if q.closed && q.size == 0 {
-		return Message{}, false
+		return Delivery{}, false
 	}
 	message := q.readyQueue[q.head]
+	token := uuid.NewString()
 	q.dequeue()
-	q.inFlight[message.ID] = InFlightMessage{
-		message,
-		time.Now(),
+	q.inFlight[token] = InFlightMessage{
+		Message:     message,
+		DeliveredAt: time.Now(),
 	}
 	q.condProd.Signal()
-	return message, true
+	delivery := Delivery{
+		Message:  message,
+		AckToken: token,
+	}
+	return delivery, true
 }
 
-func (q *Queue) Ack(messageID string) {
+func (q *Queue) Ack(token string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if _, ok := q.inFlight[messageID]; !ok {
+	if _, ok := q.inFlight[token]; !ok {
 		return // for now ignore invalid messageID
 	}
-	delete(q.inFlight, messageID)
+	delete(q.inFlight, token)
+	q.ackedCount++
+}
+
+func (q *Queue) GetMetrics() Metric {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return Metric{
+		producedCount: q.producedCount,
+		ackedCount:    q.ackedCount,
+		dlqCount:      q.dlqCount,
+		inflightCount: len(q.inFlight),
+	}
 }
 
 func (q *Queue) enqueue(message Message) {
