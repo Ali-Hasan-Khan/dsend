@@ -30,14 +30,14 @@ Dsend is a distributed message queue system.
                     │  │ token -> delivery state   │  │
                     │  └─────────────┬─────────────┘  │
                     │                │                │
-                    │      timeout   │   ack(token)  │
+                    │      timeout   │   ack(token)   │
                     │                │                │
                     │                ▼                │
                     │  ┌───────────────────────────┐  │
                     │  │    Redelivery Manager     │  │
                     │  └─────────────┬─────────────┘  │
                     │                │                │
-                    │     retry      │     maxRetry  │
+                    │     retry      │     maxRetry   │
                     │                ▼                │
                     │  ┌───────────────────────────┐  │
                     │  │    Dead Letter Queue      │  │
@@ -66,44 +66,44 @@ Dsend is a distributed message queue system.
                  ┌───────────────────────────────────────────────┐
                  │                 Broker Core                   │
                  │                                               │
-                 │  ┌─────────────────────────────────────────┐  │
-                 │  │            Exchange Layer              │  │
-                 │  │                                         │  │
-                 │  │  Direct Exchange                       │  │
-                 │  │  Fanout Exchange                       │  │
-                 │  │  Topic Exchange                        │  │
-                 │  └───────────────┬────────────────────────┘  │
-                 │                  │                           │
-                 │                  ▼                           │
-                 │  ┌─────────────────────────────────────────┐ │
-                 │  │          Queue Registry                │ │
-                 │  │                                         │ │
-                 │  │  Queue A                               │ │
-                 │  │  Queue B                               │ │
-                 │  │  Queue C                               │ │
-                 │  │  ...                                   │ │
-                 │  └───────────────┬────────────────────────┘ │
-                 │                  │                          │
-                 │                  ▼                          │
-                 │  ┌─────────────────────────────────────────┐ │
-                 │  │           Queue Engine                 │ │
-                 │  │                                         │ │
-                 │  │  Ready Queue                           │ │
-                 │  │  InFlight Store                        │ │
-                 │  │  Retry Manager                         │ │
-                 │  │  Dead Letter Queue                     │ │
-                 │  │  Consumer Group Manager                │ │
-                 │  └───────────────┬────────────────────────┘ │
-                 │                  │                          │
-                 │                  ▼                          │
-                 │  ┌─────────────────────────────────────────┐ │
-                 │  │          Persistence Layer             │ │
-                 │  │                                         │ │
-                 │  │  Write Ahead Log (WAL)                 │ │
-                 │  │  Snapshot Storage                      │ │
-                 │  │  Recovery Manager                      │ │
-                 │  └───────────────┬────────────────────────┘ │
-                 └──────────────────┼──────────────────────────┘
+                 │  ┌────────────────────────────────────────┐   │
+                 │  │            Exchange Layer              │   │
+                 │  │                                        │   │
+                 │  │  Direct Exchange                       │   │
+                 │  │  Fanout Exchange                       │   │
+                 │  │  Topic Exchange                        │   │
+                 │  └───────────────┬────────────────────────┘   │
+                 │                  │                            │
+                 │                  ▼                            │
+                 │  ┌────────────────────────────────────────┐   │
+                 │  │          Queue Registry                │   │
+                 │  │                                        │   │
+                 │  │  Queue A                               │   │
+                 │  │  Queue B                               │   │
+                 │  │  Queue C                               │   │ 
+                 │  │  ...                                   │   │
+                 │  └───────────────┬────────────────────────┘   │
+                 │                  │                            │
+                 │                  ▼                            │
+                 │  ┌────────────────────────────────────────┐   │
+                 │  │           Queue Engine                 │   │
+                 │  │                                        │   │
+                 │  │  Ready Queue                           │   │
+                 │  │  InFlight Store                        │   │
+                 │  │  Retry Manager                         │   │
+                 │  │  Dead Letter Queue                     │   │
+                 │  │  Consumer Group Manager                │   │
+                 │  └───────────────┬────────────────────────┘   │
+                 │                  │                            │
+                 │                  ▼                            │
+                 │  ┌────────────────────────────────────────┐   │
+                 │  │          Persistence Layer             │   │
+                 │  │                                        │   │
+                 │  │  Write Ahead Log (WAL)                 │   │
+                 │  │  Snapshot Storage                      │   │
+                 │  │  Recovery Manager                      │   │
+                 │  └───────────────┬────────────────────────┘   │
+                 └──────────────────┼────────────────────────────┘
                                     │
                                     ▼
                          ┌──────────────────────┐
@@ -115,7 +115,7 @@ Dsend is a distributed message queue system.
 
        ┌─────────────┐        Replication       ┌─────────────┐
        │  Broker A   │ ◄──────────────────────► │  Broker B   │
-       └──────┬──────┘                           └──────┬──────┘
+       └──────┬──────┘                          └───────┬─────┘
               │                                         │
               └────────────── Cluster ──────────────────┘
                                 │
