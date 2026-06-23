@@ -1,19 +1,27 @@
 package broker
 
-import "sync"
+import (
+	"github.com/Ali-Hasan-Khan/dsend/internal/model"
+	"github.com/Ali-Hasan-Khan/dsend/internal/storage"
+)
 
-func NewBroker(capacity int) *Queue {
-	q := &Queue{
-		readyQueue: make([]Message, capacity),
-		cap:        capacity,
-		size:       0,
-		head:       0,
-		tail:       0,
-		closed:     false,
-		inFlight:   make(map[string]InFlightMessage),
+type Broker interface {
+	Publish(message model.Message) error
+	Consume() (Delivery, bool)
+	Ack(token string)
+
+	Start()
+	Stop()
+
+	Metrics() Metric
+	IsClosed() bool
+}
+
+func NewBroker(cfg Config, wal storage.WAL) (Broker, error) {
+	msgs, err := wal.Load()
+	if err != nil {
+		return nil, err
 	}
 
-	q.condProd = sync.NewCond(&q.mu)
-	q.condCons = sync.NewCond(&q.mu)
-	return q
+	return NewInMemoryBroker(cfg, msgs, wal), nil
 }

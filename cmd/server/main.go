@@ -2,31 +2,40 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math/rand/v2"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/Ali-Hasan-Khan/dsend/internal/broker"
+	"github.com/Ali-Hasan-Khan/dsend/internal/model"
+	"github.com/Ali-Hasan-Khan/dsend/internal/storage"
 )
 
 const (
 	nProducers      int = 50
 	nConsumers      int = 50
-	queueCapacity   int = 20
 	nMsgPerProducer int = 10
 )
 
 func main() {
-	b := broker.NewBroker(queueCapacity)
+	wal, err := storage.NewFileWAL("./data/wal.log")
+	if err != nil {
+		fmt.Println("Failed to create wal log file: ", err)
+	}
+	cfg := broker.DefaultConfig()
+	cfg.QueueSize = 20
+	b, err := broker.NewBroker(cfg, wal)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	deliveredMessages := make(map[string]int)
 	ackMessages := make(map[string]int)
 	var pLock sync.Mutex
 
-	var producerWG sync.WaitGroup
-	var consumerWG sync.WaitGroup
-	var backgroundWG sync.WaitGroup
+	var producerWG, consumerWG, backgroundWG sync.WaitGroup
 
 	for i := 1; i <= nProducers; i++ {
 		producerWG.Add(1)
@@ -35,13 +44,16 @@ func main() {
 			for msg := 1; msg <= nMsgPerProducer; msg++ {
 				currID := (id-1)*nMsgPerProducer + msg
 				msgStr := fmt.Sprintf("producer-%d-msg-%d", id, msg)
-				message := broker.Message{
+				message := model.Message{
 					ID:        strconv.Itoa(currID),
 					Payload:   []byte(msgStr),
 					Timestamp: time.Now(),
 					Retry:     0,
 				}
-				b.Push(message)
+				err := b.Publish(message)
+				if err != nil {
+					fmt.Println("Error pushing this message: ", err)
+				}
 			}
 		}(i)
 	}
@@ -50,7 +62,7 @@ func main() {
 	go func() {
 		defer backgroundWG.Done()
 		for {
-			metrics := b.GetMetrics()
+			metrics := b.Metrics()
 
 			isClosed := b.IsClosed()
 
@@ -73,7 +85,7 @@ func main() {
 		go func(id int) {
 			defer consumerWG.Done()
 			for {
-				value, ok := b.Pop()
+				value, ok := b.Consume()
 				if !ok {
 					break
 				}
@@ -98,22 +110,11 @@ func main() {
 	backgroundWG.Add(1)
 	go func() {
 		defer backgroundWG.Done()
-		for !b.IsClosed() {
-			time.Sleep(time.Second * 2)
-			b.StartRedeliveryLoop()
-		}
+		b.Start()
 	}()
 
 	producerWG.Wait()
-	for {
-
-		if b.IsDone() {
-			break
-		}
-
-		time.Sleep(time.Second)
-	}
-	b.Close()
+	b.Stop()
 	consumerWG.Wait()
 	backgroundWG.Wait()
 	fmt.Println()
@@ -131,9 +132,10 @@ func main() {
 			duplicates += (c - 1)
 		}
 	}
+	dlqSize := b.Metrics().DlqCount
 	fmt.Println("Messages delivered:", totalDelivered)
 	fmt.Println("Messages consumed:", totalAcks)
 	fmt.Println("Messages lost:", (nProducers*nMsgPerProducer)-len(ackMessages))
-	fmt.Println("Messages stored in DLQ:", b.GetDLQSize())
+	fmt.Println("Messages stored in DLQ:", dlqSize)
 	fmt.Println("Messages duplicated:", duplicates)
 }
