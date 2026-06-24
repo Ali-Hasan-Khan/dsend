@@ -1,9 +1,11 @@
 ## Dsend
 
-Dsend is a distributed message queue system.
+Dsend is a queue-based Distributed Message Queue system(similar to RabbitMQ) built using Golang from scratch.
 
 ### Current Architecture
+<img width="1200" height="461" alt="image" src="https://github.com/user-attachments/assets/58781269-7a57-4d71-9afd-add79279020e" />
 
+<!--
 ```text
                            ┌─────────────────────┐
                            │      Producers      │
@@ -49,6 +51,7 @@ Dsend is a distributed message queue system.
                            │      Consumers      │
                            └─────────────────────┘
 ```
+-->
 
 ### Target Architecture (Completed Broker)
 
