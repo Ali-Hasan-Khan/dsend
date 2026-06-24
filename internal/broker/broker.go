@@ -10,8 +10,8 @@ type Broker interface {
 	Consume() (Delivery, bool)
 	Ack(token string)
 
-	Start()
-	Stop()
+	StartRedeliveryWorker()
+	Shutdown()
 
 	Metrics() Metric
 	IsClosed() bool

@@ -22,7 +22,7 @@ const (
 func main() {
 	wal, err := storage.NewFileWAL("./data/wal.log")
 	if err != nil {
-		fmt.Println("Failed to create wal log file: ", err)
+		log.Println("Failed to create wal log file: ", err)
 	}
 	cfg := broker.DefaultConfig()
 	cfg.QueueSize = 20
@@ -52,7 +52,7 @@ func main() {
 				}
 				err := b.Publish(message)
 				if err != nil {
-					fmt.Println("Error pushing this message: ", err)
+					log.Println("Error pushing this message: ", err)
 				}
 			}
 		}(i)
@@ -110,14 +110,13 @@ func main() {
 	backgroundWG.Add(1)
 	go func() {
 		defer backgroundWG.Done()
-		b.Start()
+		b.StartRedeliveryWorker()
 	}()
 
 	producerWG.Wait()
-	b.Stop()
+	b.Shutdown()
 	consumerWG.Wait()
 	backgroundWG.Wait()
-	fmt.Println()
 
 	// Metrics
 	var totalDelivered = 0
@@ -133,9 +132,9 @@ func main() {
 		}
 	}
 	dlqSize := b.Metrics().DlqCount
-	fmt.Println("Messages delivered:", totalDelivered)
-	fmt.Println("Messages consumed:", totalAcks)
-	fmt.Println("Messages lost:", (nProducers*nMsgPerProducer)-len(ackMessages))
-	fmt.Println("Messages stored in DLQ:", dlqSize)
-	fmt.Println("Messages duplicated:", duplicates)
+	log.Println("Messages delivered:", totalDelivered)
+	log.Println("Messages consumed:", totalAcks)
+	log.Println("Messages lost:", (nProducers*nMsgPerProducer)-len(ackMessages))
+	log.Println("Messages stored in DLQ:", dlqSize)
+	log.Println("Messages duplicated:", duplicates)
 }

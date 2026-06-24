@@ -117,7 +117,7 @@ func (q *InMemoryBroker) Ack(token string) {
 	q.ackedCount++
 }
 
-func (q *InMemoryBroker) Start() {
+func (q *InMemoryBroker) StartRedeliveryWorker() {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for !q.IsClosed() {
@@ -126,7 +126,7 @@ func (q *InMemoryBroker) Start() {
 	}
 }
 
-func (q *InMemoryBroker) Stop() {
+func (q *InMemoryBroker) Shutdown() {
 	for {
 		if q.isDone() {
 			break
@@ -134,7 +134,7 @@ func (q *InMemoryBroker) Stop() {
 
 		time.Sleep(time.Second)
 	}
-	q.close()
+	q.shutdown()
 }
 
 func (q *InMemoryBroker) IsClosed() bool {
@@ -187,7 +187,7 @@ func (q *InMemoryBroker) processExpiredMessages() {
 
 }
 
-func (q *InMemoryBroker) close() {
+func (q *InMemoryBroker) shutdown() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.closed = true
