@@ -8,12 +8,12 @@ import (
 type Broker interface {
 	Publish(message model.Message) error
 	Consume() (Delivery, bool)
-	Ack(token string)
+	Ack(token string) error
 
 	StartRedeliveryWorker()
 	Shutdown()
 
-	Metrics() Metric
+	Metrics() model.Metric
 	IsClosed() bool
 }
 

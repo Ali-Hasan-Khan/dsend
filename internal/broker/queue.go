@@ -2,6 +2,7 @@ package broker
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -77,6 +78,8 @@ func (q *InMemoryBroker) Publish(message model.Message) error {
 	if q.closed {
 		return ErrBrokerClosed
 	}
+	message.ID = uuid.NewString()
+	message.Timestamp = time.Now().UTC()
 	if err := q.wal.Append(message); err != nil {
 		return err
 	}
@@ -107,14 +110,16 @@ func (q *InMemoryBroker) Consume() (Delivery, bool) {
 	return delivery, true
 }
 
-func (q *InMemoryBroker) Ack(token string) {
+func (q *InMemoryBroker) Ack(token string) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if ok := q.inFlightManager.IsPresent(token); !ok {
-		return // for now ignore invalid messageID
+		fmt.Printf("Token Not found: %s\n", token)
+		return fmt.Errorf("Message not present in inflight")
 	}
 	q.inFlightManager.Remove(token)
 	q.ackedCount++
+	return nil
 }
 
 func (q *InMemoryBroker) StartRedeliveryWorker() {
@@ -127,14 +132,11 @@ func (q *InMemoryBroker) StartRedeliveryWorker() {
 }
 
 func (q *InMemoryBroker) Shutdown() {
-	for {
-		if q.isDone() {
-			break
-		}
-
-		time.Sleep(time.Second)
-	}
-	q.shutdown()
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.closed = true
+	q.condProd.Broadcast()
+	q.condCons.Broadcast()
 }
 
 func (q *InMemoryBroker) IsClosed() bool {
@@ -143,23 +145,16 @@ func (q *InMemoryBroker) IsClosed() bool {
 	return q.closed
 }
 
-func (q *InMemoryBroker) Metrics() Metric {
+func (q *InMemoryBroker) Metrics() model.Metric {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	metrics := Metric{
+	metrics := model.Metric{
 		AckedCount:    q.ackedCount,
 		InflightCount: q.inFlightManager.Size(),
 		ProducedCount: q.producedCount,
 		DlqCount:      q.deadLetterQueue.Size(),
 	}
 	return metrics
-}
-
-func (q *InMemoryBroker) isDone() bool {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	done := q.ackedCount+q.deadLetterQueue.Size() == q.producedCount
-	return done
 }
 
 func (q *InMemoryBroker) processExpiredMessages() {
@@ -186,17 +181,3 @@ func (q *InMemoryBroker) processExpiredMessages() {
 	}
 
 }
-
-func (q *InMemoryBroker) shutdown() {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	q.closed = true
-	q.condProd.Broadcast()
-	q.condCons.Broadcast()
-}
-
-// func (q *InMemoryBroker) Size() int {
-// 	q.mu.Lock()
-// 	defer q.mu.Unlock()
-// 	return q.queue.Size()
-// }

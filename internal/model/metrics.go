@@ -1,4 +1,4 @@
-package broker
+package model
 
 type Metric struct {
 	ProducedCount int
