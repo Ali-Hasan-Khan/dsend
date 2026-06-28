@@ -1,0 +1,8 @@
+package protocol
+
+const (
+	PublishRequest = "publish"
+	ConsumeRequest = "consume"
+	AckRequest     = "ack"
+	MetricsRequest = "metrics"
+)

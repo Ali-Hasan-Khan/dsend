@@ -10,7 +10,7 @@ type Config struct {
 
 func DefaultConfig() Config {
 	return Config{
-		AckTimeout: time.Second,
+		AckTimeout: time.Second*10,
 		MaxRetries: 3,
 		QueueSize:  100,
 	}
