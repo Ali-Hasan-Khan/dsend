@@ -1,6 +1,8 @@
 package broker
 
 import (
+	"context"
+
 	"github.com/Ali-Hasan-Khan/dsend/internal/model"
 	"github.com/Ali-Hasan-Khan/dsend/internal/storage"
 )
@@ -10,7 +12,7 @@ type Broker interface {
 	Consume() (Delivery, bool)
 	Ack(token string) error
 
-	StartRedeliveryWorker()
+	StartRedeliveryWorker(ctx context.Context)
 	Shutdown()
 
 	Metrics() model.Metric

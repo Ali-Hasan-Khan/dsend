@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -78,7 +79,9 @@ func (q *InMemoryBroker) Publish(message model.Message) error {
 	if q.closed {
 		return ErrBrokerClosed
 	}
-	message.ID = uuid.NewString()
+	if message.ID == "" {
+		message.ID = uuid.NewString()
+	}
 	message.Timestamp = time.Now().UTC()
 	if err := q.wal.Append(message); err != nil {
 		return err
@@ -122,12 +125,16 @@ func (q *InMemoryBroker) Ack(token string) error {
 	return nil
 }
 
-func (q *InMemoryBroker) StartRedeliveryWorker() {
+func (q *InMemoryBroker) StartRedeliveryWorker(ctx context.Context) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for !q.IsClosed() {
-		<-ticker.C
-		q.processExpiredMessages()
+		select {
+		case <-ticker.C:
+			q.processExpiredMessages()
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 

@@ -19,7 +19,6 @@ func main() {
 		log.Println("Failed to create wal log file: ", err)
 	}
 	cfg := broker.DefaultConfig()
-	cfg.QueueSize = 20
 	broker, err := broker.NewBroker(cfg, wal)
 	if err != nil {
 		log.Fatal(err)
@@ -33,7 +32,7 @@ func main() {
 	var wg sync.WaitGroup
 
 	wg.Go(func() {
-		broker.StartRedeliveryWorker()
+		broker.StartRedeliveryWorker(ctx)
 	})
 
 	if err := server.Start(ctx); err != nil {
@@ -42,5 +41,5 @@ func main() {
 	broker.Shutdown()
 	wg.Wait()
 
-	log.Println("Broker shutdown successfully...")
+	log.Println("Broker shutdown successfully.")
 }

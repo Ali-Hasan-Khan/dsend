@@ -68,6 +68,11 @@ func (s *Server) handleConnection(conn net.Conn, b broker.Broker) {
 				Success: true,
 				Metrics: metrics,
 			})
+		default:
+			encoder.Encode(protocol.Response{
+				Success: false,
+				Error:   "unknown request",
+			})
 		}
 	}
 }

@@ -31,16 +31,8 @@ func (c *Client) Publish(msg string) error {
 			Payload: msg,
 		},
 	}
-	if err := c.encoder.Encode(&req); err != nil {
-		return fmt.Errorf("Fatal: Failed to marshal or send JSON payload: %v", err)
-	}
 
-	_ = c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-
-	var resp protocol.Response
-	if err := c.decoder.Decode(&resp); err != nil {
-		return fmt.Errorf("Fatal: Failed to receive or parse server response stream: %v", err)
-	}
+	resp := c.do(req)
 
 	if resp.Success {
 		fmt.Println("[Server Response] Success!")
@@ -56,16 +48,7 @@ func (c *Client) Consume() error {
 		Type: protocol.ConsumeRequest,
 	}
 
-	if err := c.encoder.Encode(&req); err != nil {
-		return fmt.Errorf("Fatal: Failed to marshal or send JSON payload: %v", err)
-	}
-
-	_ = c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-
-	var resp protocol.Response
-	if err := c.decoder.Decode(&resp); err != nil {
-		return fmt.Errorf("Fatal: Failed to receive or parse server response stream: %v", err)
-	}
+	resp := c.do(req)
 
 	if resp.Success {
 		fmt.Printf("[Server Response] Success! Ack Token: %v\n", resp.AckToken)
@@ -83,16 +66,7 @@ func (c *Client) Ack(token string) error {
 		AckToken: token,
 	}
 
-	if err := c.encoder.Encode(&req); err != nil {
-		return fmt.Errorf("Fatal: Failed to marshal or send JSON payload: %v", err)
-	}
-
-	_ = c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-
-	var resp protocol.Response
-	if err := c.decoder.Decode(&resp); err != nil {
-		return fmt.Errorf("Fatal: Failed to receive or parse server response stream: %v", err)
-	}
+	resp := c.do(req)
 
 	if resp.Success {
 		fmt.Println("[Server Response] Success! ")
@@ -109,16 +83,7 @@ func (c *Client) Metrics() error {
 		Type: protocol.MetricsRequest,
 	}
 
-	if err := c.encoder.Encode(&req); err != nil {
-		return fmt.Errorf("Fatal: Failed to marshal or send JSON payload: %v", err)
-	}
-
-	_ = c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-
-	var resp protocol.Response
-	if err := c.decoder.Decode(&resp); err != nil {
-		return fmt.Errorf("Fatal: Failed to receive or parse server response stream: %v", err)
-	}
+	resp := c.do(req)
 
 	if resp.Success {
 		fmt.Println("[Server Response] Success! ")
@@ -127,4 +92,31 @@ func (c *Client) Metrics() error {
 	}
 
 	return nil
+}
+
+func (c *Client) do(req protocol.Request) *protocol.Response {
+	if err := c.encoder.Encode(&req); err != nil {
+		return &protocol.Response{
+			Success: false,
+			Error:   fmt.Sprintf("Fatal: Failed to marshal or send JSON payload: %v", err),
+		}
+	}
+
+	_ = c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+
+	var resp protocol.Response
+	if err := c.decoder.Decode(&resp); err != nil {
+		return &protocol.Response{
+			Success: false,
+			Error:   fmt.Sprintf("Fatal: Failed to receive or parse server response stream: %v", err),
+		}
+	}
+
+	return &protocol.Response{
+		Success:  true,
+		Error:    "",
+		Message:  resp.Message,
+		AckToken: resp.AckToken,
+		Metrics:  resp.Metrics,
+	}
 }

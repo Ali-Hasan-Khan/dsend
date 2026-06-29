@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math/rand/v2"
+	"os"
+	"os/signal"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Ali-Hasan-Khan/dsend/internal/broker"
@@ -30,6 +34,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	deliveredMessages := make(map[string]int)
 	ackMessages := make(map[string]int)
@@ -110,7 +117,7 @@ func main() {
 	backgroundWG.Add(1)
 	go func() {
 		defer backgroundWG.Done()
-		b.StartRedeliveryWorker()
+		b.StartRedeliveryWorker(ctx)
 	}()
 
 	producerWG.Wait()
