@@ -60,6 +60,15 @@ func main() {
 			if err := client.Ack(msgToken); err != nil {
 				log.Fatal(err)
 			}
+		case protocol.SubscribeRequest:
+			if len(msgs) != 2 {
+				fmt.Print("Usage: subscribe <consumer_id>\n> ")
+				continue
+			}
+			ID := msgs[1]
+			if err := client.Subscribe(ID); err != nil {
+				log.Fatal(err)
+			}
 		default:
 			fmt.Print("Invalid type(only consume,ack supported)!\n> ")
 			continue

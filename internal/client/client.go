@@ -24,6 +24,33 @@ func NewClient(conn net.Conn) *Client {
 	}
 }
 
+func (c *Client) do(req protocol.Request) *protocol.Response {
+	if err := c.encoder.Encode(&req); err != nil {
+		return &protocol.Response{
+			Success: false,
+			Error:   fmt.Sprintf("Fatal: Failed to marshal or send JSON payload: %v", err),
+		}
+	}
+
+	_ = c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+
+	var resp protocol.Response
+	if err := c.decoder.Decode(&resp); err != nil {
+		return &protocol.Response{
+			Success: false,
+			Error:   fmt.Sprintf("Fatal: Failed to receive or parse server response stream: %v", err),
+		}
+	}
+
+	return &protocol.Response{
+		Success:  true,
+		Error:    "",
+		Message:  resp.Message,
+		AckToken: resp.AckToken,
+		Metrics:  resp.Metrics,
+	}
+}
+
 func (c *Client) Publish(msg string) error {
 	req := protocol.Request{
 		Type: protocol.PublishRequest,
@@ -94,29 +121,27 @@ func (c *Client) Metrics() error {
 	return nil
 }
 
-func (c *Client) do(req protocol.Request) *protocol.Response {
-	if err := c.encoder.Encode(&req); err != nil {
-		return &protocol.Response{
-			Success: false,
-			Error:   fmt.Sprintf("Fatal: Failed to marshal or send JSON payload: %v", err),
-		}
+func (c *Client) Subscribe(ID string) error {
+	var req protocol.Request
+	req = protocol.Request{
+		Type: protocol.SubscribeRequest,
+		ID:   ID,
 	}
 
-	_ = c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if err := c.encoder.Encode(&req); err != nil {
+		return fmt.Errorf("Fatal: Failed to marshal or send JSON payload: %v", err)
+	}
 
 	var resp protocol.Response
 	if err := c.decoder.Decode(&resp); err != nil {
-		return &protocol.Response{
-			Success: false,
-			Error:   fmt.Sprintf("Fatal: Failed to receive or parse server response stream: %v", err),
-		}
+		return fmt.Errorf("Fatal: Failed to receive or parse server response stream: %v", err)
 	}
 
-	return &protocol.Response{
-		Success:  true,
-		Error:    "",
-		Message:  resp.Message,
-		AckToken: resp.AckToken,
-		Metrics:  resp.Metrics,
+	if resp.Success {
+		fmt.Printf("[Server Response] Success! Ack Token: %v\n", resp.AckToken)
+	} else {
+		fmt.Printf("[Server Response] Failed! Cause: %s\n", resp.Error)
 	}
+
+	return nil
 }

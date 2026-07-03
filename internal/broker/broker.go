@@ -4,13 +4,15 @@ import (
 	"context"
 
 	"github.com/Ali-Hasan-Khan/dsend/internal/model"
+	"github.com/Ali-Hasan-Khan/dsend/internal/session"
 	"github.com/Ali-Hasan-Khan/dsend/internal/storage"
 )
 
 type Broker interface {
 	Publish(message model.Message) error
-	Consume() (Delivery, bool)
+	Consume() (model.Delivery, bool)
 	Ack(token string) error
+	Subscribe(session *session.ConsumerSession)
 
 	StartRedeliveryWorker(ctx context.Context)
 	Shutdown()

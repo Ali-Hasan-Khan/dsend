@@ -8,6 +8,7 @@ import (
 
 	"github.com/Ali-Hasan-Khan/dsend/internal/broker"
 	"github.com/Ali-Hasan-Khan/dsend/internal/protocol"
+	"github.com/Ali-Hasan-Khan/dsend/internal/session"
 )
 
 func (s *Server) handleConnection(conn net.Conn, b broker.Broker) {
@@ -68,6 +69,17 @@ func (s *Server) handleConnection(conn net.Conn, b broker.Broker) {
 				Success: true,
 				Metrics: metrics,
 			})
+		case protocol.SubscribeRequest:
+			session := session.NewConsumerSession(req.ID)
+			b.Subscribe(session)
+			for {
+				delivery := <-session.Deliveries
+				encoder.Encode(protocol.Response{
+					Success:  true,
+					Message:  delivery.Message,
+					AckToken: delivery.AckToken,
+				})
+			}
 		default:
 			encoder.Encode(protocol.Response{
 				Success: false,

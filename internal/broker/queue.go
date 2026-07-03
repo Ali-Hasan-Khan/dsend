@@ -13,6 +13,7 @@ import (
 	"github.com/Ali-Hasan-Khan/dsend/internal/inflight"
 	"github.com/Ali-Hasan-Khan/dsend/internal/model"
 	"github.com/Ali-Hasan-Khan/dsend/internal/queue"
+	"github.com/Ali-Hasan-Khan/dsend/internal/session"
 	"github.com/Ali-Hasan-Khan/dsend/internal/storage"
 )
 
@@ -41,6 +42,8 @@ type InMemoryBroker struct {
 
 	inFlightManager *inflight.Manager
 	deadLetterQueue DeadLetterQueue
+
+	consumerSessions []*session.ConsumerSession
 
 	ackedCount    int
 	producedCount int
@@ -86,27 +89,37 @@ func (q *InMemoryBroker) Publish(message model.Message) error {
 	if err := q.wal.Append(message); err != nil {
 		return err
 	}
-	q.queue.Push(message)
-	q.producedCount++
-	q.condCons.Signal()
+
+	if len(q.consumerSessions) > 0 {
+		session := q.consumerSessions[0]
+		delivery := model.Delivery{
+			Message:  message,
+			AckToken: uuid.NewString(),
+		}
+		session.Deliveries <- delivery
+	} else {
+		q.queue.Push(message)
+		q.producedCount++
+		q.condCons.Signal()
+	}
 
 	return nil
 }
 
-func (q *InMemoryBroker) Consume() (Delivery, bool) {
+func (q *InMemoryBroker) Consume() (model.Delivery, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	for !q.closed && q.queue.Size() == 0 {
 		q.condCons.Wait()
 	}
 	if q.closed && q.queue.Size() == 0 {
-		return Delivery{}, false
+		return model.Delivery{}, false
 	}
 	token := uuid.NewString()
 	message := q.queue.Pop()
 	q.inFlightManager.Add(token, message)
 	q.condProd.Signal()
-	delivery := Delivery{
+	delivery := model.Delivery{
 		Message:  message,
 		AckToken: token,
 	}
@@ -123,6 +136,19 @@ func (q *InMemoryBroker) Ack(token string) error {
 	q.inFlightManager.Remove(token)
 	q.ackedCount++
 	return nil
+}
+
+func (q *InMemoryBroker) Subscribe(session *session.ConsumerSession) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.queue.Size() > 0 {
+		delivery, ok := q.Consume()
+		if ok {
+			session.Deliveries <- delivery
+		}
+	} else {
+		q.consumerSessions = append(q.consumerSessions, session)
+	}
 }
 
 func (q *InMemoryBroker) StartRedeliveryWorker(ctx context.Context) {

@@ -1,8 +1,9 @@
 package protocol
 
 const (
-	PublishRequest = "publish"
-	ConsumeRequest = "consume"
-	AckRequest     = "ack"
-	MetricsRequest = "metrics"
+	PublishRequest   = "publish"
+	ConsumeRequest   = "consume"
+	AckRequest       = "ack"
+	MetricsRequest   = "metrics"
+	SubscribeRequest = "subscribe"
 )
