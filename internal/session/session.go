@@ -15,7 +15,11 @@ type ConsumerSession struct {
 func NewConsumerSession(ID string) *ConsumerSession {
 	return &ConsumerSession{
 		ID:         ID,
-		Deliveries: make(chan model.Delivery),
+		Deliveries: make(chan model.Delivery, 100),
 		Closed:     make(chan struct{}),
 	}
+}
+
+func (cs *ConsumerSession) Close() {
+	close(cs.Closed)
 }

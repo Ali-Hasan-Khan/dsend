@@ -31,15 +31,27 @@ func main() {
 
 	var wg sync.WaitGroup
 
-	wg.Go(func() {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		broker.StartRedeliveryWorker(ctx)
-	})
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		broker.RunDistributor(ctx)
+	}()
 
 	if err := server.Start(ctx); err != nil {
 		log.Fatal(err)
 	}
+
 	broker.Shutdown()
+
+	log.Println("Broker shutdown successfully. Waiting for workers to shutdown...")
+
 	wg.Wait()
 
-	log.Println("Broker shutdown successfully.")
+	log.Println("System shutdown successfully.")
 }

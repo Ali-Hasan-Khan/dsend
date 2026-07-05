@@ -10,11 +10,12 @@ import (
 
 type Broker interface {
 	Publish(message model.Message) error
-	Consume() (model.Delivery, bool)
 	Ack(token string) error
 	Subscribe(session *session.ConsumerSession)
+	Unsubscribe(id string)
 
 	StartRedeliveryWorker(ctx context.Context)
+	RunDistributor(ctx context.Context)
 	Shutdown()
 
 	Metrics() model.Metric

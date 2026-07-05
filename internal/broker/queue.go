@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -22,6 +23,7 @@ var ErrBrokerClosed = errors.New("broker closed")
 type Queue interface {
 	Push(model.Message)
 	Pop() model.Message
+	Peek() model.Message
 	Size() int
 	Capacity() int
 }
@@ -38,15 +40,19 @@ type InMemoryBroker struct {
 	closed bool
 
 	condProd *sync.Cond
-	condCons *sync.Cond
 
 	inFlightManager *inflight.Manager
 	deadLetterQueue DeadLetterQueue
 
-	consumerSessions []*session.ConsumerSession
+	consumerSessions map[string]*session.ConsumerSession
+	consumerOrder    []string
+	nextConsumer     int
 
-	ackedCount    int
-	producedCount int
+	notifyDistributor chan struct{}
+
+	ackedCount       int
+	producedCount    int
+	redeliveredCount int
 
 	wal storage.WAL
 
@@ -56,32 +62,36 @@ type InMemoryBroker struct {
 func NewInMemoryBroker(cfg Config, messages []model.Message, wal storage.WAL) *InMemoryBroker {
 	cap := max(cfg.QueueSize, len(messages))
 	broker := &InMemoryBroker{
-		queue:           queue.NewRingBufferQueue(cap),
-		inFlightManager: inflight.NewManager(),
-		deadLetterQueue: dlq.NewDLQ(),
-		wal:             wal,
-		config:          cfg,
+		queue:             queue.NewRingBufferQueue(cap),
+		inFlightManager:   inflight.NewManager(),
+		deadLetterQueue:   dlq.NewDLQ(),
+		consumerSessions:  make(map[string]*session.ConsumerSession),
+		consumerOrder:     make([]string, 0),
+		notifyDistributor: make(chan struct{}, 1),
+		wal:               wal,
+		config:            cfg,
 	}
 
 	broker.condProd = sync.NewCond(&broker.mu)
-	broker.condCons = sync.NewCond(&broker.mu)
 
 	for _, msg := range messages {
 		broker.queue.Push(msg)
 		broker.producedCount++
 	}
+	broker.notifyDistributor <- struct{}{}
 	return broker
 }
 
 func (q *InMemoryBroker) Publish(message model.Message) error {
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	for !q.closed && q.queue.Size() == q.queue.Capacity() {
 		q.condProd.Wait()
 	}
 	if q.closed {
+		q.mu.Unlock()
 		return ErrBrokerClosed
 	}
+	q.mu.Unlock()
 	if message.ID == "" {
 		message.ID = uuid.NewString()
 	}
@@ -90,48 +100,24 @@ func (q *InMemoryBroker) Publish(message model.Message) error {
 		return err
 	}
 
-	if len(q.consumerSessions) > 0 {
-		session := q.consumerSessions[0]
-		delivery := model.Delivery{
-			Message:  message,
-			AckToken: uuid.NewString(),
-		}
-		session.Deliveries <- delivery
-	} else {
-		q.queue.Push(message)
-		q.producedCount++
-		q.condCons.Signal()
+	q.mu.Lock()
+	q.queue.Push(message)
+	q.producedCount++
+	q.mu.Unlock()
+
+	select {
+	case q.notifyDistributor <- struct{}{}:
+	default:
 	}
 
 	return nil
-}
-
-func (q *InMemoryBroker) Consume() (model.Delivery, bool) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	for !q.closed && q.queue.Size() == 0 {
-		q.condCons.Wait()
-	}
-	if q.closed && q.queue.Size() == 0 {
-		return model.Delivery{}, false
-	}
-	token := uuid.NewString()
-	message := q.queue.Pop()
-	q.inFlightManager.Add(token, message)
-	q.condProd.Signal()
-	delivery := model.Delivery{
-		Message:  message,
-		AckToken: token,
-	}
-	return delivery, true
 }
 
 func (q *InMemoryBroker) Ack(token string) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if ok := q.inFlightManager.IsPresent(token); !ok {
-		fmt.Printf("Token Not found: %s\n", token)
-		return fmt.Errorf("Message not present in inflight")
+		return fmt.Errorf("Message not present in inflight, Ack token: %s", token)
 	}
 	q.inFlightManager.Remove(token)
 	q.ackedCount++
@@ -141,23 +127,82 @@ func (q *InMemoryBroker) Ack(token string) error {
 func (q *InMemoryBroker) Subscribe(session *session.ConsumerSession) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if q.queue.Size() > 0 {
-		delivery, ok := q.Consume()
-		if ok {
-			session.Deliveries <- delivery
+	q.consumerSessions[session.ID] = session
+	q.consumerOrder = append(q.consumerOrder, session.ID)
+	select {
+	case q.notifyDistributor <- struct{}{}:
+	default:
+	}
+}
+
+func (q *InMemoryBroker) Unsubscribe(id string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if _, ok := q.consumerSessions[id]; !ok {
+		return
+	}
+	sess := q.consumerSessions[id]
+	delete(q.consumerSessions, id)
+	q.consumerOrder = slices.DeleteFunc(q.consumerOrder, func(sessionId string) bool {
+		return sessionId == id
+	})
+	if len(q.consumerOrder) == 0 {
+    q.nextConsumer = 0
+} else {
+    q.nextConsumer %= len(q.consumerOrder)
+}
+	sess.Close()
+}
+
+func (q *InMemoryBroker) RunDistributor(ctx context.Context) {
+	for {
+		select {
+		case <-q.notifyDistributor:
+			for {
+
+				q.mu.Lock()
+				if q.queue.Size() == 0 || len(q.consumerSessions) == 0 {
+					q.mu.Unlock()
+					break
+				}
+				q.mu.Unlock()
+
+				delivery, ok := q.peek()
+				if ok {
+					q.mu.Lock()
+					id := q.consumerOrder[q.nextConsumer]
+					session := q.consumerSessions[id]
+					q.nextConsumer++
+					q.nextConsumer %= len(q.consumerOrder)
+					q.mu.Unlock()
+					select {
+					case <-session.Closed:
+						continue
+					case session.Deliveries <- delivery:
+						q.popForDelivery(delivery.AckToken)
+					case <-ctx.Done():
+						return
+					default: // consumer busy -> ignore
+					}
+				}
+			}
+		case <-ctx.Done():
+			return
 		}
-	} else {
-		q.consumerSessions = append(q.consumerSessions, session)
 	}
 }
 
 func (q *InMemoryBroker) StartRedeliveryWorker(ctx context.Context) {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
-	for !q.IsClosed() {
+	for {
 		select {
 		case <-ticker.C:
 			q.processExpiredMessages()
+			select {
+			case q.notifyDistributor <- struct{}{}:
+			default:
+			}
 		case <-ctx.Done():
 			return
 		}
@@ -169,7 +214,6 @@ func (q *InMemoryBroker) Shutdown() {
 	defer q.mu.Unlock()
 	q.closed = true
 	q.condProd.Broadcast()
-	q.condCons.Broadcast()
 }
 
 func (q *InMemoryBroker) IsClosed() bool {
@@ -182,12 +226,46 @@ func (q *InMemoryBroker) Metrics() model.Metric {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	metrics := model.Metric{
-		AckedCount:    q.ackedCount,
-		InflightCount: q.inFlightManager.Size(),
-		ProducedCount: q.producedCount,
-		DlqCount:      q.deadLetterQueue.Size(),
+		AckedCount:           q.ackedCount,
+		InflightCount:        q.inFlightManager.Size(),
+		ProducedCount:        q.producedCount,
+		DlqCount:             q.deadLetterQueue.Size(),
+		RedeliveredCount:     q.redeliveredCount,
+		ConsumerSessionCount: len(q.consumerSessions),
+		QueueDepth:           q.queue.Size(),
 	}
 	return metrics
+}
+
+func (q *InMemoryBroker) popForDelivery(token string) (model.Delivery, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.queue.Size() == 0 {
+		return model.Delivery{}, false
+	}
+	message := q.queue.Pop()
+	q.inFlightManager.Add(token, message)
+	q.condProd.Signal()
+	delivery := model.Delivery{
+		Message:  message,
+		AckToken: token,
+	}
+	return delivery, true
+}
+
+func (q *InMemoryBroker) peek() (model.Delivery, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.queue.Size() == 0 {
+		return model.Delivery{}, false
+	}
+	token := uuid.NewString()
+	message := q.queue.Peek()
+	delivery := model.Delivery{
+		Message:  message,
+		AckToken: token,
+	}
+	return delivery, true
 }
 
 func (q *InMemoryBroker) processExpiredMessages() {
@@ -208,7 +286,7 @@ func (q *InMemoryBroker) processExpiredMessages() {
 		msg := item.Message
 		msg.Retry++
 		q.queue.Push(msg)
-		q.condCons.Signal()
+		q.redeliveredCount++
 		// delete
 		q.inFlightManager.Remove(item.Token)
 	}
