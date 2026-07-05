@@ -1,8 +1,42 @@
 ## Dsend
 
-Dsend is a queue-based Distributed Message Queue system(similar to RabbitMQ) built using Golang from scratch.
+Dsend is a **queue-based distributed message broker** (inspired by RabbitMQ) built completely from scratch in **Go**.
 
-### Current Architecture
+
+---
+
+## Features Implemented
+
+### Core Broker
+
+- In-memory ring-buffer queue
+- Multi-producer / multi-consumer support
+- Push-based message delivery
+- Round-robin consumer scheduling
+- At-least-once delivery semantics
+- Ack-based message processing
+- Automatic message redelivery
+- Dead Letter Queue (DLQ)
+- Queue depth & broker metrics
+
+### Persistence
+
+- Write Ahead Log (WAL)
+- Broker recovery from WAL after restart
+
+### Networking
+
+- Custom TCP server
+- Persistent producer connections
+- Persistent consumer connections
+- JSON-based wire protocol
+- Consumer subscribe / unsubscribe
+- Graceful shutdown
+
+---
+
+## Current Architecture
+
 <img width="1200" height="461" alt="image" src="https://github.com/user-attachments/assets/58781269-7a57-4d71-9afd-add79279020e" />
 
 <!--
@@ -53,7 +87,7 @@ Dsend is a queue-based Distributed Message Queue system(similar to RabbitMQ) bui
 ```
 -->
 
-### Target Architecture (Completed Broker)
+## Target Architecture (Distributed Broker)
 
 ```text
                                     ┌──────────────────┐
@@ -83,7 +117,7 @@ Dsend is a queue-based Distributed Message Queue system(similar to RabbitMQ) bui
                  │  │                                        │   │
                  │  │  Queue A                               │   │
                  │  │  Queue B                               │   │
-                 │  │  Queue C                               │   │ 
+                 │  │  Queue C                               │   │
                  │  │  ...                                   │   │
                  │  └───────────────┬────────────────────────┘   │
                  │                  │                            │
@@ -125,3 +159,14 @@ Dsend is a queue-based Distributed Message Queue system(similar to RabbitMQ) bui
                                 ▼
                      Leader Election / Failover
 ```
+
+---
+
+## Tech Stack
+
+- **Language:** Go
+- **Networking:** TCP
+- **Concurrency:** Goroutines, Channels, Mutexes
+- **Persistence:** Write Ahead Log (WAL)
+- **Serialization:** JSON
+- **Architecture:** Queue-based Message Broker
