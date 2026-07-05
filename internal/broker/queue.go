@@ -147,10 +147,10 @@ func (q *InMemoryBroker) Unsubscribe(id string) {
 		return sessionId == id
 	})
 	if len(q.consumerOrder) == 0 {
-    q.nextConsumer = 0
-} else {
-    q.nextConsumer %= len(q.consumerOrder)
-}
+		q.nextConsumer = 0
+	} else {
+		q.nextConsumer %= len(q.consumerOrder)
+	}
 	sess.Close()
 }
 
