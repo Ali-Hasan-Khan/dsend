@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/rand/v2"
 	"os"
 	"os/signal"
 	"strconv"
@@ -40,7 +39,7 @@ func main() {
 
 	deliveredMessages := make(map[string]int)
 	ackMessages := make(map[string]int)
-	var pLock sync.Mutex
+	// var pLock sync.Mutex
 
 	var producerWG, consumerWG, backgroundWG sync.WaitGroup
 
@@ -87,32 +86,32 @@ func main() {
 		}
 	}()
 
-	for i := 1; i <= nConsumers; i++ {
-		consumerWG.Add(1)
-		go func(id int) {
-			defer consumerWG.Done()
-			for {
-				value, ok := b.Consume()
-				if !ok {
-					break
-				}
-				pLock.Lock()
-				deliveredMessages[value.ID]++
-				pLock.Unlock()
+	// for i := 1; i <= nConsumers; i++ {
+	// 	consumerWG.Add(1)
+	// 	go func(id int) {
+	// 		defer consumerWG.Done()
+	// 		for {
+	// 			value, ok := b.Consume()
+	// 			if !ok {
+	// 				break
+	// 			}
+	// 			pLock.Lock()
+	// 			deliveredMessages[value.ID]++
+	// 			pLock.Unlock()
 
-				// simulate consumer crash 20% of the time
-				if rand.IntN(100) < 20 {
-					continue
-				}
+	// 			// simulate consumer crash 20% of the time
+	// 			if rand.IntN(100) < 20 {
+	// 				continue
+	// 			}
 
-				b.Ack(value.AckToken)
+	// 			b.Ack(value.AckToken)
 
-				pLock.Lock()
-				ackMessages[value.ID]++
-				pLock.Unlock()
-			}
-		}(i)
-	}
+	// 			pLock.Lock()
+	// 			ackMessages[value.ID]++
+	// 			pLock.Unlock()
+	// 		}
+	// 	}(i)
+	// }
 
 	backgroundWG.Add(1)
 	go func() {

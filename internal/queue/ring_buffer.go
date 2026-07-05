@@ -36,6 +36,11 @@ func (q *RingBufferQueue) Pop() model.Message {
 	return item
 }
 
+func (q *RingBufferQueue) Peek() model.Message {
+	item := q.items[q.head]
+	return item
+}
+
 func (q *RingBufferQueue) Size() int {
 	return q.size
 }

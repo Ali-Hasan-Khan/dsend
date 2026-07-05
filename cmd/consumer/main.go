@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -9,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/Ali-Hasan-Khan/dsend/internal/client"
-	"github.com/Ali-Hasan-Khan/dsend/internal/protocol"
 )
 
 func main() {
@@ -20,52 +20,47 @@ func main() {
 		log.Fatalf("Failed to connect to server: %v", err)
 	}
 	defer conn.Close()
-	fmt.Printf("Connected Consumer to %s. Type your commands below in the following format:\n", serverAddr)
-	fmt.Println("1. consume\n2. ack <ack_token>")
+
+	client := client.NewClient(conn)
+
+	fmt.Printf("Connected Consumer ID: %s to %s:\n", client.Id, serverAddr)
+	// fmt.Println("1. consume\n2. ack <ack_token>")
 	fmt.Println("Type 'exit' to quit.")
 	fmt.Print("> ")
 
-	client := client.NewClient(conn)
+	ctx, cancel := context.WithCancel(context.Background())
+	client.Subscribe()
+	go client.Decoder(ctx)
 
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for scanner.Scan() {
+		msg := strings.TrimSpace(scanner.Text())
 
-		msg := scanner.Text()
-		msg = strings.TrimSpace(msg)
+		if len(strings.Split(msg, " ")) > 1 {
+			token := strings.Split(msg, " ")[1]
+			client.Ack(token)
+			fmt.Print("> ")
+			continue
+		}
 
-		if msg == "exit" {
-			fmt.Println("Closing connection. Goodbye!")
-			return
+		if msg == "unsubscribe" {
+			client.Unsubscribe()
+			fmt.Println("Unsubscribed successfully!")
+			fmt.Print("> ")
+			continue
 		}
 
 		if msg == "" {
+			fmt.Print("> ")
 			continue
 		}
 
-		msgs := strings.Split(msg, " ")
-		msgType := msgs[0]
-
-		switch msgType {
-		case protocol.ConsumeRequest:
-			if err := client.Consume(); err != nil {
-				log.Fatal(err)
-			}
-		case protocol.AckRequest:
-			if len(msgs) != 2 {
-				fmt.Print("Usage: ack <token>\n> ")
-				continue
-			}
-			msgToken := msgs[1]
-			if err := client.Ack(msgToken); err != nil {
-				log.Fatal(err)
-			}
-		default:
-			fmt.Print("Invalid type(only consume,ack supported)!\n> ")
-			continue
+		if msg == "exit" {
+			cancel()
+			fmt.Println("Closing connection. Goodbye!")
+			return
 		}
-
-		fmt.Print("> ")
 	}
 
 	if err := scanner.Err(); err != nil {
