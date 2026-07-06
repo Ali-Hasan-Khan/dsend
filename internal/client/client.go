@@ -124,7 +124,11 @@ func (c *Client) Metrics() error {
 	resp := c.do(req)
 
 	if resp.Success {
-		fmt.Println("[Server Response] Success! ")
+		fmt.Printf("ProducedCount: %v\nQueueDepth: %v\nInflightCount: %v\nDlqCount: %v\nConsumerSessionCount: %v\nAckedCount: %v\nRedeliveredCount: %v\n.......\n\n",
+			resp.Metrics.ProducedCount, resp.Metrics.QueueDepth,
+			resp.Metrics.InflightCount, resp.Metrics.DlqCount,
+			resp.Metrics.ConsumerSessionCount, resp.Metrics.AckedCount,
+			resp.Metrics.RedeliveredCount)
 	} else {
 		fmt.Printf("[Server Response] Failed! Cause: %s\n", resp.Error)
 	}
