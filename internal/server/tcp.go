@@ -28,9 +28,8 @@ func (s *Server) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("Failed to start server: %v", err)
 	}
-	// defer listener.Close()
 
-	log.Printf("TCP server running on port %v....", s.listenAddr[1:])
+	log.Printf("TCP server running on port %v....", s.listenAddr)
 
 	var wg sync.WaitGroup
 

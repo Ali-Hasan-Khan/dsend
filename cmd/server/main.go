@@ -27,7 +27,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	server := server.New(":8080", broker)
+	server := server.New("127.0.0.1:8080", broker)
 
 	var wg sync.WaitGroup
 
