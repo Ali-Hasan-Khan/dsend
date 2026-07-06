@@ -26,7 +26,7 @@ func NewFileWAL(path string) (*FileWAL, error) {
 		return nil, fmt.Errorf("failed to create WAL directory: %w", err)
 	}
 
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize WAL file: %w", err)
 	}
