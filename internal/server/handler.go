@@ -7,12 +7,12 @@ import (
 	"net"
 	"sync"
 
-	"github.com/Ali-Hasan-Khan/dsend/internal/broker"
+	"github.com/Ali-Hasan-Khan/dsend/internal/engine"
 	"github.com/Ali-Hasan-Khan/dsend/internal/protocol"
 	"github.com/Ali-Hasan-Khan/dsend/internal/session"
 )
 
-func (s *Server) handleConnection(conn net.Conn, b broker.Broker) {
+func (s *Server) handleConnection(conn net.Conn, b engine.Broker) {
 	defer conn.Close()
 	clientAddr := conn.RemoteAddr().String()
 	log.Printf("New client connected from: %s", clientAddr)

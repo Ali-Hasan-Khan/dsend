@@ -1,4 +1,4 @@
-package dlq
+package queue
 
 import "github.com/Ali-Hasan-Khan/dsend/internal/model"
 

@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Ali-Hasan-Khan/dsend/internal/broker"
+	"github.com/Ali-Hasan-Khan/dsend/internal/engine"
 	"github.com/Ali-Hasan-Khan/dsend/internal/model"
 	"github.com/Ali-Hasan-Khan/dsend/internal/storage"
 )
@@ -27,9 +27,9 @@ func main() {
 	if err != nil {
 		log.Println("Failed to create wal log file: ", err)
 	}
-	cfg := broker.DefaultConfig()
+	cfg := engine.DefaultConfig()
 	cfg.QueueSize = 20
-	b, err := broker.NewBroker(cfg, wal)
+	b, err := engine.NewBroker(cfg, wal)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -70,15 +70,15 @@ func main() {
 		for {
 			metrics := b.Metrics()
 
-			isClosed := b.IsClosed()
+			// isClosed := b.IsClosed()
 
 			fmt.Printf("Acked count: %d\033[K\n", metrics.AckedCount)
 			fmt.Printf("Inflight:    %d\033[K\n", metrics.InflightCount)
 
 			// If the queue is finished, exit the print loop
-			if isClosed {
-				break
-			}
+			// if isClosed {
+			// 	break
+			// }
 
 			time.Sleep(100 * time.Millisecond)
 

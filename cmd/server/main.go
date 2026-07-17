@@ -8,7 +8,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/Ali-Hasan-Khan/dsend/internal/broker"
+	"github.com/Ali-Hasan-Khan/dsend/internal/engine"
 	"github.com/Ali-Hasan-Khan/dsend/internal/server"
 	"github.com/Ali-Hasan-Khan/dsend/internal/storage"
 )
@@ -18,8 +18,8 @@ func main() {
 	if err != nil {
 		log.Println("Failed to create wal log file: ", err)
 	}
-	cfg := broker.DefaultConfig()
-	broker, err := broker.NewBroker(cfg, wal)
+	cfg := engine.DefaultConfig()
+	broker, err := engine.NewBroker(cfg, wal)
 	if err != nil {
 		log.Fatal(err)
 	}

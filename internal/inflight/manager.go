@@ -7,11 +7,6 @@ import (
 	"github.com/Ali-Hasan-Khan/dsend/internal/model"
 )
 
-type ExpiredDelivery struct {
-	Token   string
-	Message model.Message
-}
-
 type Manager struct {
 	mu         sync.RWMutex
 	deliveries map[string]model.InFlightMessage
@@ -38,15 +33,15 @@ func (m *Manager) Remove(token string) {
 	delete(m.deliveries, token)
 }
 
-func (m *Manager) Expired(timeout time.Duration) []ExpiredDelivery {
+func (m *Manager) Expired(timeout time.Duration) []model.Delivery {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	expiredMessages := make([]ExpiredDelivery, 0)
+	expiredMessages := make([]model.Delivery, 0)
 	for idx, item := range m.deliveries {
 		if time.Since(item.DeliveredAt) > timeout {
-			expiredMessages = append(expiredMessages, ExpiredDelivery{
-				Token:   idx,
-				Message: item.Message,
+			expiredMessages = append(expiredMessages, model.Delivery{
+				Message:  item.Message,
+				AckToken: idx,
 			})
 		}
 	}
