@@ -1,12 +1,14 @@
 package engine
 
 import (
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/Ali-Hasan-Khan/dsend/internal/model"
 	"github.com/google/uuid"
 )
+
+var ErrInvalidAckToken = errors.New("invalid ack token")
 
 func (q *InMemoryBroker) Publish(message model.Message) error {
 	q.mu.Lock()
@@ -43,7 +45,7 @@ func (q *InMemoryBroker) Ack(token string) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if ok := q.inFlightManager.IsPresent(token); !ok {
-		return fmt.Errorf("Message not present in inflight, Ack token: %s", token)
+		return ErrInvalidAckToken
 	}
 	q.inFlightManager.Remove(token)
 	q.ackedCount++

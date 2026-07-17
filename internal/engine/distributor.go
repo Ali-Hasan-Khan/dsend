@@ -13,26 +13,18 @@ func (q *InMemoryBroker) RunDistributor(ctx context.Context) {
 		select {
 		case <-q.notifyDistributor:
 			for {
+				sess, delivery, ok := q.reserveDelivery()
 
-				q.mu.Lock()
-				if q.queue.Size() == 0 || len(q.consumerSessions) == 0 {
-					q.mu.Unlock()
+				if !ok {
 					break
 				}
-				q.mu.Unlock()
 
-				delivery, ok := q.peek()
-				if ok {
-					session := q.nextSession()
-					select {
-					case <-session.Closed:
-						continue
-					case session.Deliveries <- delivery:
-						q.popForDelivery(delivery.AckToken) // delivery successful
-					case <-ctx.Done():
-						return
-					default: // consumer busy -> ignore
-					}
+				select {
+				case <-sess.Closed:
+					q.cancelReservation(delivery)
+				case sess.Deliveries <- delivery:
+				default:
+					q.cancelReservation(delivery)
 				}
 			}
 		case <-ctx.Done():
@@ -41,22 +33,19 @@ func (q *InMemoryBroker) RunDistributor(ctx context.Context) {
 	}
 }
 
-func (q *InMemoryBroker) nextSession() *session.ConsumerSession {
+func (q *InMemoryBroker) reserveDelivery() (*session.ConsumerSession, model.Delivery, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	id := q.consumerOrder[q.nextConsumer]
-	session := q.consumerSessions[id]
-	q.nextConsumer++
-	q.nextConsumer %= len(q.consumerOrder)
-	return session
-}
-
-func (q *InMemoryBroker) popForDelivery(token string) (model.Delivery, bool) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	if q.queue.Size() == 0 {
-		return model.Delivery{}, false
+	if q.queue.Size() == 0 || len(q.consumerSessions) == 0 {
+		return nil, model.Delivery{}, false
 	}
+
+	session, ok := q.nextSession()
+	if !ok {
+		return nil, model.Delivery{}, false
+	}
+
+	token := uuid.NewString()
 	message := q.queue.Pop()
 	q.inFlightManager.Add(token, message)
 	q.condProd.Signal()
@@ -64,20 +53,37 @@ func (q *InMemoryBroker) popForDelivery(token string) (model.Delivery, bool) {
 		Message:  message,
 		AckToken: token,
 	}
-	return delivery, true
+
+	return session, delivery, true
 }
 
-func (q *InMemoryBroker) peek() (model.Delivery, bool) {
+func (q *InMemoryBroker) nextSession() (*session.ConsumerSession, bool) {
+	if len(q.consumerOrder) == 0 {
+		return nil, false
+	}
+
+	if q.nextConsumer >= len(q.consumerOrder) {
+		q.nextConsumer = 0
+	}
+
+	id := q.consumerOrder[q.nextConsumer]
+	q.nextConsumer = (q.nextConsumer + 1) % len(q.consumerOrder)
+
+	sess, ok := q.consumerSessions[id]
+	if !ok {
+		return nil, false
+	}
+
+	return sess, true
+}
+
+func (q *InMemoryBroker) cancelReservation(delivery model.Delivery) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if q.queue.Size() == 0 {
-		return model.Delivery{}, false
+	q.inFlightManager.Remove(delivery.AckToken)
+	q.queue.Push(delivery.Message)
+	select {
+	case q.notifyDistributor <- struct{}{}:
+	default:
 	}
-	token := uuid.NewString()
-	message := q.queue.Peek()
-	delivery := model.Delivery{
-		Message:  message,
-		AckToken: token,
-	}
-	return delivery, true
 }
