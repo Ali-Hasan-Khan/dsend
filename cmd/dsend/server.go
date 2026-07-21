@@ -13,15 +13,15 @@ import (
 	"github.com/Ali-Hasan-Khan/dsend/internal/storage"
 )
 
-func main() {
+func runServer(args []string) error {
 	wal, err := storage.NewFileWAL("./data/wal.log")
 	if err != nil {
-		log.Println("Failed to create wal log file: ", err)
+		return err
 	}
 	cfg := engine.DefaultConfig()
 	broker, err := engine.NewBroker(cfg, wal)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -44,7 +44,7 @@ func main() {
 	}()
 
 	if err := server.Start(ctx); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	broker.Shutdown()
@@ -54,4 +54,6 @@ func main() {
 	wg.Wait()
 
 	log.Println("System shutdown successfully.")
+
+	return nil
 }

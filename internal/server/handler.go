@@ -62,11 +62,6 @@ func (s *Server) handleConnection(conn net.Conn, b engine.Broker) {
 				mu.Unlock()
 				continue
 			}
-			mu.Lock()
-			encoder.Encode(protocol.Response{
-				Success: true,
-			})
-			mu.Unlock()
 		case protocol.MetricsRequest:
 			metrics := b.Metrics()
 			mu.Lock()
