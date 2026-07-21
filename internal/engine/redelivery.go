@@ -6,16 +6,12 @@ import (
 )
 
 func (q *InMemoryBroker) StartRedeliveryWorker(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(q.config.RedeliveryInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
 			q.processExpiredMessages()
-			select {
-			case q.notifyDistributor <- struct{}{}:
-			default:
-			}
 		case <-ctx.Done():
 			return
 		}
@@ -34,6 +30,7 @@ func (q *InMemoryBroker) processExpiredMessages() {
 		if item.Message.Retry >= q.config.MaxRetries {
 			q.deadLetterQueue.Push(item.Message)
 			q.inFlightManager.Remove(item.AckToken)
+			q.deadletteredCount++
 			continue
 		}
 		// repush
@@ -43,6 +40,11 @@ func (q *InMemoryBroker) processExpiredMessages() {
 		q.redeliveredCount++
 		// delete
 		q.inFlightManager.Remove(item.AckToken)
+
+		select {
+		case q.notifyDistributor <- struct{}{}:
+		default:
+		}
 	}
 
 }

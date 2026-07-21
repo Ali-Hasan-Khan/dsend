@@ -16,6 +16,10 @@ func (q *DLQ) Push(message model.Message) {
 	q.messages = append(q.messages, message)
 }
 
+func (q *DLQ) Peek() model.Message {
+	return q.messages[len(q.messages)-1]
+}
+
 func (q *DLQ) Size() int {
 	return len(q.messages)
 }

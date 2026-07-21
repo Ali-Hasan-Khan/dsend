@@ -23,6 +23,7 @@ type Queue interface {
 type DeadLetterQueue interface {
 	Push(model.Message)
 	Size() int
+	Peek() model.Message
 }
 
 type InFlightManager interface {
@@ -50,9 +51,10 @@ type InMemoryBroker struct {
 
 	notifyDistributor chan struct{}
 
-	ackedCount       int
-	producedCount    int
-	redeliveredCount int
+	ackedCount        int
+	producedCount     int
+	redeliveredCount  int
+	deadletteredCount int
 
 	wal storage.WAL
 

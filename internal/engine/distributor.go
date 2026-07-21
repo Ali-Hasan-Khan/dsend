@@ -80,8 +80,11 @@ func (q *InMemoryBroker) nextSession() (*session.ConsumerSession, bool) {
 func (q *InMemoryBroker) cancelReservation(delivery model.Delivery) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+
 	q.inFlightManager.Remove(delivery.AckToken)
 	q.queue.Push(delivery.Message)
+	q.condProd.Signal()
+
 	select {
 	case q.notifyDistributor <- struct{}{}:
 	default:

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/Ali-Hasan-Khan/dsend/internal/model"
+	"github.com/Ali-Hasan-Khan/dsend/internal/session"
 	"github.com/google/uuid"
 )
 
@@ -55,7 +56,15 @@ func (q *InMemoryBroker) Ack(token string) error {
 func (q *InMemoryBroker) Shutdown() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+
 	q.closed = true
+
+	for _, s := range q.consumerSessions {
+		s.Close()
+	}
+
+	q.consumerSessions = map[string]*session.ConsumerSession{}
+
 	q.condProd.Broadcast()
 }
 
@@ -66,7 +75,7 @@ func (q *InMemoryBroker) Metrics() model.Metric {
 		AckedCount:           q.ackedCount,
 		InflightCount:        q.inFlightManager.Size(),
 		ProducedCount:        q.producedCount,
-		DlqCount:             q.deadLetterQueue.Size(),
+		DlqCount:             q.deadletteredCount,
 		RedeliveredCount:     q.redeliveredCount,
 		ConsumerSessionCount: len(q.consumerSessions),
 		QueueDepth:           q.queue.Size(),

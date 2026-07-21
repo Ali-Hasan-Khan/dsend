@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -209,5 +210,31 @@ func TestAppendPreservesOrder(t *testing.T) {
 				msgs[i].ID,
 			)
 		}
+	}
+}
+
+func TestLoadCorruptedWAL(t *testing.T) {
+	dir := t.TempDir()
+
+	path := filepath.Join(dir, "wal.log")
+
+	err := os.WriteFile(
+		path,
+		[]byte("{bad json}\n"),
+		0644,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wal, err := NewFileWAL(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = wal.Load()
+
+	if err == nil {
+		t.Fatal("expected decode error")
 	}
 }
