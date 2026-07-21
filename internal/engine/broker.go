@@ -1,9 +1,11 @@
-package broker
+package engine
 
 import (
 	"context"
 
+	"github.com/Ali-Hasan-Khan/dsend/internal/inflight"
 	"github.com/Ali-Hasan-Khan/dsend/internal/model"
+	"github.com/Ali-Hasan-Khan/dsend/internal/queue"
 	"github.com/Ali-Hasan-Khan/dsend/internal/session"
 	"github.com/Ali-Hasan-Khan/dsend/internal/storage"
 )
@@ -19,7 +21,6 @@ type Broker interface {
 	Shutdown()
 
 	Metrics() model.Metric
-	IsClosed() bool
 }
 
 func NewBroker(cfg Config, wal storage.WAL) (Broker, error) {
@@ -28,5 +29,10 @@ func NewBroker(cfg Config, wal storage.WAL) (Broker, error) {
 		return nil, err
 	}
 
-	return NewInMemoryBroker(cfg, msgs, wal), nil
+	cap := max(cfg.QueueSize, len(msgs))
+	ringQ := queue.NewRingBufferQueue(cap)
+	deadQ := queue.NewDLQ()
+	inflightMgr := inflight.NewManager()
+
+	return NewInMemoryBroker(cfg, msgs, wal, ringQ, deadQ, inflightMgr), nil
 }

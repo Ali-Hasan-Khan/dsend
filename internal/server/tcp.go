@@ -8,15 +8,15 @@ import (
 	"net"
 	"sync"
 
-	"github.com/Ali-Hasan-Khan/dsend/internal/broker"
+	"github.com/Ali-Hasan-Khan/dsend/internal/engine"
 )
 
 type Server struct {
 	listenAddr string
-	broker     broker.Broker
+	broker     engine.Broker
 }
 
-func New(listenAddr string, broker broker.Broker) *Server {
+func New(listenAddr string, broker engine.Broker) *Server {
 	return &Server{
 		listenAddr: listenAddr,
 		broker:     broker,
