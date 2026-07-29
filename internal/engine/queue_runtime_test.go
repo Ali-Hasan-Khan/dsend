@@ -37,7 +37,7 @@ func (m *mockWAL) Load() (storage.RecoveredState, error) {
 	return storage.RecoveredState{}, nil
 }
 
-func newTestBroker(wal *mockWAL) *QueueRuntime {
+func newTestQueueRuntime(wal *mockWAL) *QueueRuntime {
 	cfg := DefaultConfig()
 	cfg.QueueSize = 10
 
@@ -81,7 +81,7 @@ func TestPublish(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			wal := &mockWAL{}
-			b := newTestBroker(wal)
+			b := newTestQueueRuntime(wal)
 
 			err := b.Publish(tt.message)
 			if err != nil {
@@ -136,7 +136,7 @@ func TestPublishWALFailure(t *testing.T) {
 				appendErr: tt.err,
 			}
 
-			b := newTestBroker(wal)
+			b := newTestQueueRuntime(wal)
 
 			err := b.Publish(model.Message{
 				Payload: "hello",
@@ -161,7 +161,7 @@ func TestPublishWALFailure(t *testing.T) {
 
 func TestPublishSetsCurrentTimestamp(t *testing.T) {
 	wal := &mockWAL{}
-	b := newTestBroker(wal)
+	b := newTestQueueRuntime(wal)
 
 	before := time.Now()
 
@@ -181,7 +181,7 @@ func TestPublishSetsCurrentTimestamp(t *testing.T) {
 	}
 }
 
-func TestBrokerRecoveryFromMessages(t *testing.T) {
+func TestQueueRuntimeRecoveryFromMessages(t *testing.T) {
 	msgs := []model.Message{
 		{
 			ID:      "1",
@@ -446,7 +446,7 @@ func TestRoundRobinAfterConsumerLeaves(t *testing.T) {
 		t.Fatalf("consumer3 received %d messages", c3Count.Load())
 	}
 
-	waitForBrokerIdle(t, broker)
+	waitForRuntimeIdle(t, broker)
 
 	metrics := broker.Metrics()
 
@@ -525,7 +525,7 @@ func TestRecoveredMessagesCanBeConsumed(t *testing.T) {
 		}
 	}
 
-	waitForBrokerIdle(t, broker)
+	waitForRuntimeIdle(t, broker)
 
 	metrics := broker.Metrics()
 
@@ -602,7 +602,7 @@ func TestAckPreventsRedelivery(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 
-	waitForBrokerIdle(t, broker)
+	waitForRuntimeIdle(t, broker)
 
 	metrics := broker.Metrics()
 
@@ -678,7 +678,7 @@ func TestMessageIsRedelivered(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	waitForBrokerIdle(t, broker)
+	waitForRuntimeIdle(t, broker)
 
 	metrics := broker.Metrics()
 
@@ -822,7 +822,7 @@ func TestMessageMovesToDLQAfterMaxRetries(t *testing.T) {
 }
 
 func TestShutdownRejectsNewPublishes(t *testing.T) {
-	broker := newTestBroker(&mockWAL{})
+	broker := newTestQueueRuntime(&mockWAL{})
 
 	broker.Shutdown()
 
@@ -920,7 +920,7 @@ func TestShutdownClosesAllConsumerSessions(t *testing.T) {
 }
 
 func TestShutdownIsIdempotent(t *testing.T) {
-	broker := newTestBroker(&mockWAL{})
+	broker := newTestQueueRuntime(&mockWAL{})
 
 	broker.Shutdown()
 

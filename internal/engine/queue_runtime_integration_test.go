@@ -30,13 +30,13 @@ func newIntegrationBroker(queueSize int) *QueueRuntime {
 	)
 }
 
-func waitForBrokerIdle(t *testing.T, broker *QueueRuntime) {
+func waitForRuntimeIdle(t *testing.T, runtime *QueueRuntime) {
 	t.Helper()
 
 	deadline := time.Now().Add(2 * time.Second)
 
 	for time.Now().Before(deadline) {
-		m := broker.Metrics()
+		m := runtime.Metrics()
 
 		if m.QueueDepth == 0 && m.InflightCount == 0 {
 			return
@@ -45,10 +45,10 @@ func waitForBrokerIdle(t *testing.T, broker *QueueRuntime) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	t.Fatal("broker did not become idle")
+	t.Fatal("runtime did not become idle")
 }
 
-func TestBrokerPublishConsumeAck(t *testing.T) {
+func TestQueueRuntimePublishConsumeAck(t *testing.T) {
 	const (
 		producers           = 2
 		messagesPerProducer = 50
@@ -110,7 +110,7 @@ func TestBrokerPublishConsumeAck(t *testing.T) {
 	producerWG.Wait()
 	consumerWG.Wait()
 
-	waitForBrokerIdle(t, broker)
+	waitForRuntimeIdle(t, broker)
 
 	metrics := broker.Metrics()
 
@@ -145,7 +145,7 @@ func TestBrokerPublishConsumeAck(t *testing.T) {
 	}
 }
 
-func TestBrokerRoundRobinConsumers(t *testing.T) {
+func TestQueueRuntimeRoundRobinConsumers(t *testing.T) {
 	const totalMessages = 300
 
 	broker := newIntegrationBroker(500)
@@ -232,7 +232,7 @@ func TestBrokerRoundRobinConsumers(t *testing.T) {
 	}
 }
 
-func TestBrokerStress(t *testing.T) {
+func TestQueueRuntimeStress(t *testing.T) {
 	const (
 		producers     = 20
 		consumers     = 10
@@ -335,7 +335,7 @@ func TestBrokerStress(t *testing.T) {
 
 	consumerWG.Wait()
 
-	waitForBrokerIdle(t, broker)
+	waitForRuntimeIdle(t, broker)
 
 	metrics := broker.Metrics()
 
