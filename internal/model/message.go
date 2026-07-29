@@ -2,6 +2,10 @@ package model
 
 import "time"
 
+const (
+	DefaultQueueName = "default"
+)
+
 type Message struct {
 	ID        string    `json:"id"`
 	Payload   string    `json:"payload"`

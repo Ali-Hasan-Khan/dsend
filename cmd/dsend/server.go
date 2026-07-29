@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 
 	"github.com/Ali-Hasan-Khan/dsend/internal/engine"
@@ -29,29 +28,13 @@ func runServer(args []string) error {
 
 	server := server.New("127.0.0.1:8080", broker)
 
-	var wg sync.WaitGroup
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		broker.StartRedeliveryWorker(ctx)
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		broker.RunDistributor(ctx)
-	}()
+	broker.Start(ctx)
 
 	if err := server.Start(ctx); err != nil {
 		return err
 	}
 
 	broker.Shutdown()
-
-	log.Println("Broker shutdown successfully. Waiting for workers to shutdown...")
-
-	wg.Wait()
 
 	log.Println("System shutdown successfully.")
 

@@ -27,10 +27,27 @@ func (m *Manager) Add(token string, message model.Message) {
 	}
 }
 
-func (m *Manager) Remove(token string) {
+func (m *Manager) Remove(token string) (model.Message, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if _, ok := m.deliveries[token]; !ok {
+		return model.Message{}, false
+	}
+	inflight := m.deliveries[token]
 	delete(m.deliveries, token)
+	return inflight.Message, true
+}
+
+func (m *Manager) Get(token string) (model.Message, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	delivery, ok := m.deliveries[token]
+	if !ok {
+		return model.Message{}, false
+	}
+
+	return delivery.Message, true
 }
 
 func (m *Manager) Expired(timeout time.Duration) []model.Delivery {

@@ -28,12 +28,15 @@ func runMetrics(args []string) error {
 		return err
 	}
 
-	fmt.Printf("ProducedCount: %v\nQueueDepth: %v\nInflightCount: %v\nDlqCount: %v\nConsumerSessionCount: %v\nAckedCount: %v\nRedeliveredCount: %v\n",
-		resp.ProducedCount, resp.QueueDepth,
-		resp.InflightCount, resp.DlqCount,
-		resp.ConsumerSessionCount, resp.AckedCount,
-		resp.RedeliveredCount,
-	)
+	for _, r := range resp.Queues {
+		m := r.Metric
+		fmt.Printf("ProducedCount: %v\nQueueDepth: %v\nInflightCount: %v\nDlqCount: %v\nConsumerSessionCount: %v\nAckedCount: %v\nRedeliveredCount: %v\n",
+			m.ProducedCount, m.QueueDepth,
+			m.InflightCount, m.DlqCount,
+			m.ConsumerSessionCount, m.AckedCount,
+			m.RedeliveredCount,
+		)
+	}
 
 	c.Close()
 	return nil

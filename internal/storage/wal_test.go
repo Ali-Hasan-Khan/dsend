@@ -17,6 +17,15 @@ func newMessage(id, payload string) model.Message {
 	}
 }
 
+func published(queue string, message model.Message) model.Record {
+	return model.Record{
+		Type:      model.Published,
+		Queue:     queue,
+		Message:   message,
+		MessageID: message.ID,
+	}
+}
+
 func TestNewFileWALCreatesFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "wal.log")
@@ -57,7 +66,7 @@ func TestAppendSingleMessage(t *testing.T) {
 
 	msg := newMessage("1", "hello")
 
-	if err := wal.Append(msg); err != nil {
+	if err := wal.Append(published(model.DefaultQueueName, msg)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -96,7 +105,7 @@ func TestAppendMultipleMessages(t *testing.T) {
 	}
 
 	for _, msg := range tests {
-		if err := wal.Append(msg); err != nil {
+		if err := wal.Append(published(model.DefaultQueueName, msg)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -185,7 +194,7 @@ func TestAppendPreservesOrder(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		msg := newMessage(string(rune(i)), "payload")
 
-		if err := wal.Append(msg); err != nil {
+		if err := wal.Append(published(model.DefaultQueueName, msg)); err != nil {
 			t.Fatal(err)
 		}
 	}

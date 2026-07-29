@@ -7,13 +7,18 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/Ali-Hasan-Khan/dsend/internal/model"
 )
 
 type WAL interface {
-	Append(msg model.Message) error
-	Load() ([]model.Message, error)
+	Append(record model.Record) error
+	Load() (RecoveredState, error)
+}
+
+type RecoveredState struct {
+	PendingMessages map[string][]model.Message
 }
 
 type FileWAL struct {
@@ -35,8 +40,8 @@ func NewFileWAL(path string) (*FileWAL, error) {
 	return &FileWAL{path: path}, nil
 }
 
-func (f *FileWAL) Append(msg model.Message) error {
-	data, err := json.Marshal(msg)
+func (f *FileWAL) Append(record model.Record) error {
+	data, err := json.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("error marshalling data: %w", err)
 	}
@@ -54,29 +59,79 @@ func (f *FileWAL) Append(msg model.Message) error {
 	return nil
 }
 
-func (f *FileWAL) Load() ([]model.Message, error) {
+func removeMessage(messages []model.Message, messageID string) []model.Message {
+	return slices.DeleteFunc(messages, func(message model.Message) bool {
+		return message.ID == messageID
+	})
+}
+
+func (f *FileWAL) Load() (RecoveredState, error) {
 	file, err := os.Open(f.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return []model.Message{}, nil
+			return RecoveredState{}, nil
 		}
-		return nil, fmt.Errorf("error opening file: %w", err)
+		return RecoveredState{}, fmt.Errorf("error opening file: %w", err)
 	}
 	defer file.Close()
 
-	var msgs []model.Message
+	state := RecoveredState{
+		PendingMessages: make(map[string][]model.Message),
+	}
 
 	decoder := json.NewDecoder(file)
 	for {
-		var msg model.Message
-		if err := decoder.Decode(&msg); err != nil {
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return nil, fmt.Errorf("error decoding log entry: %w", err)
+			return RecoveredState{}, fmt.Errorf("error decoding log entry: %w", err)
 		}
-		msgs = append(msgs, msg)
+
+		var record model.Record
+		if err := json.Unmarshal(raw, &record); err != nil {
+			return RecoveredState{}, fmt.Errorf("error decoding WAL record: %w", err)
+		}
+
+		if record.Type == "" {
+			var message model.Message
+			if err := json.Unmarshal(raw, &message); err != nil {
+				return RecoveredState{}, fmt.Errorf("error decoding WAL record: %w", err)
+			}
+
+			state.PendingMessages[model.DefaultQueueName] = append(
+				state.PendingMessages[model.DefaultQueueName],
+				message,
+			)
+			continue
+		}
+
+		switch record.Type {
+		case model.QueueCreated:
+			if _, exists := state.PendingMessages[record.Queue]; !exists {
+				state.PendingMessages[record.Queue] = nil
+			}
+		case model.Published:
+			state.PendingMessages[record.Queue] = append(
+				state.PendingMessages[record.Queue],
+				record.Message,
+			)
+		case model.Requeued:
+			messages := removeMessage(
+				state.PendingMessages[record.Queue],
+				record.MessageID,
+			)
+			state.PendingMessages[record.Queue] = append(messages, record.Message)
+		case model.Acknowledged, model.DeadLettered:
+			state.PendingMessages[record.Queue] = removeMessage(
+				state.PendingMessages[record.Queue],
+				record.MessageID,
+			)
+		case model.QueueDeleted:
+			delete(state.PendingMessages, record.Queue)
+		}
 	}
 
-	return msgs, nil
+	return state, nil
 }

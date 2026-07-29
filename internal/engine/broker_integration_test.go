@@ -14,12 +14,13 @@ import (
 	"github.com/Ali-Hasan-Khan/dsend/internal/session"
 )
 
-func newIntegrationBroker(queueSize int) *InMemoryBroker {
+func newIntegrationBroker(queueSize int) *QueueRuntime {
 	cfg := DefaultConfig()
 	cfg.QueueSize = queueSize
 	cfg.AckTimeout = time.Second
 
-	return NewInMemoryBroker(
+	return NewQueueRuntime(
+		model.DefaultQueueName,
 		cfg,
 		nil,
 		&mockWAL{},
@@ -29,7 +30,7 @@ func newIntegrationBroker(queueSize int) *InMemoryBroker {
 	)
 }
 
-func waitForBrokerIdle(t *testing.T, broker *InMemoryBroker) {
+func waitForBrokerIdle(t *testing.T, broker *QueueRuntime) {
 	t.Helper()
 
 	deadline := time.Now().Add(2 * time.Second)

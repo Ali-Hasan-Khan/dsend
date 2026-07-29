@@ -39,7 +39,7 @@ func (c *Producer) do(req protocol.Request) (*protocol.Response, error) {
 	return &resp, nil
 }
 
-func (c *Producer) Publish(ctx context.Context, payload string) error {
+func (c *Producer) Publish(ctx context.Context, queueName string, payload string) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -47,7 +47,8 @@ func (c *Producer) Publish(ctx context.Context, payload string) error {
 	}
 
 	req := protocol.Request{
-		Type: protocol.PublishRequest,
+		Type:  protocol.PublishRequest,
+		Queue: queueName,
 		Message: model.Message{
 			Payload: payload,
 		},
@@ -69,7 +70,7 @@ func (c *Producer) Publish(ctx context.Context, payload string) error {
 	return nil
 }
 
-func (c *Producer) Metrics(ctx context.Context) (*model.Metric, error) {
+func (c *Producer) Metrics(ctx context.Context) (*model.BrokerMetrics, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -96,4 +97,128 @@ func (c *Producer) Metrics(ctx context.Context) (*model.Metric, error) {
 	}
 
 	return &resp.Metrics, nil
+}
+
+func (c *Producer) QueueMetrics(ctx context.Context, queueName string) (*model.QueueMetric, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	var req protocol.Request
+	req = protocol.Request{
+		Type:  protocol.MetricsRequest,
+		Queue: queueName,
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+			return nil, err
+		}
+	}
+
+	if !resp.Success {
+		return nil, errors.New(resp.Error)
+	}
+
+	for _, qm := range resp.Metrics.Queues {
+		if qm.Name == queueName {
+			return &qm, nil
+		}
+	}
+
+	return nil, errors.New("Queue Metrics Not found")
+}
+
+func (c *Producer) CreateQueue(ctx context.Context, name string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	req := protocol.Request{
+		Type:  protocol.CreateQueueRequest,
+		Queue: name,
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return err
+		}
+	}
+
+	if !resp.Success {
+		return errors.New(resp.Error)
+	}
+	return nil
+}
+
+func (c *Producer) DeleteQueue(ctx context.Context, name string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	req := protocol.Request{
+		Type:  protocol.DeleteQueueRequest,
+		Queue: name,
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return err
+		}
+	}
+
+	if !resp.Success {
+		return errors.New(resp.Error)
+	}
+	return nil
+}
+
+func (c *Producer) ListQueues(ctx context.Context) ([]string, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	req := protocol.Request{
+		Type: protocol.ListQueuesRequest,
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+			return nil, err
+		}
+	}
+
+	if !resp.Success {
+		return nil, errors.New(resp.Error)
+	}
+
+	queues := make([]string, 0, len(resp.Queues))
+	for _, queue := range resp.Queues {
+		queues = append(queues, queue.Name)
+	}
+	return queues, nil
 }

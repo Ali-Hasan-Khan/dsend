@@ -15,6 +15,7 @@ import (
 
 func runPublish(args []string) error {
 	publishCmd := flag.NewFlagSet("publish", flag.ExitOnError)
+	queueName := publishCmd.String("queue", "default", "target queue")
 	publishCmd.Parse(args)
 	remainingArgs := publishCmd.Args()
 
@@ -32,7 +33,7 @@ func runPublish(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	err = c.Publish(ctx, payload)
+	err = c.Publish(ctx, *queueName, payload)
 	if err != nil {
 		return err
 	}

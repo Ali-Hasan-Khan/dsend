@@ -8,3 +8,9 @@ const (
 	SubscribeRequest   = "subscribe"
 	UnsubscribeRequest = "unsubscribe"
 )
+
+const (
+	CreateQueueRequest = "create_queue"
+	DeleteQueueRequest = "delete_queue"
+	ListQueuesRequest  = "list_queues"
+)

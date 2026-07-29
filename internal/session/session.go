@@ -1,15 +1,16 @@
 package session
 
 import (
+	"sync"
+
 	"github.com/Ali-Hasan-Khan/dsend/internal/model"
 )
 
 type ConsumerSession struct {
-	ID string
-
+	ID         string
 	Deliveries chan model.Delivery
-
-	Closed chan struct{}
+	Closed     chan struct{}
+	closeOnce  sync.Once
 }
 
 func NewConsumerSession(ID string) *ConsumerSession {
@@ -21,5 +22,7 @@ func NewConsumerSession(ID string) *ConsumerSession {
 }
 
 func (cs *ConsumerSession) Close() {
-	close(cs.Closed)
+	cs.closeOnce.Do(func() {
+		close(cs.Closed)
+	})
 }

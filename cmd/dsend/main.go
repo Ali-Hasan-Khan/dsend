@@ -8,7 +8,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Error: expected 'server', 'publish', 'subscribe', or 'metrics' subcommand")
+		fmt.Println("Error: expected 'server', 'publish', 'subscribe', 'queue create/delete/list', or 'metrics' subcommand")
 		os.Exit(1)
 	}
 
@@ -27,6 +27,10 @@ func main() {
 		}
 	case "metrics":
 		if err := runMetrics(os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
+	case "queue":
+		if err := runQueue(os.Args[2:]); err != nil {
 			log.Fatal(err)
 		}
 	default:
