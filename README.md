@@ -16,8 +16,9 @@ The project focuses on correctness, simplicity, and learning while providing a s
 
 ### Broker
 
-- In-memory ring buffer queue
+- Multiple named in-memory ring-buffer queues
 - Multi-producer / multi-consumer architecture
+- Queue-scoped consumers, round-robin delivery, DLQs, retries, and metrics
 - Push-based message delivery
 - Round-robin consumer scheduling
 - At-least-once delivery semantics
@@ -30,7 +31,7 @@ The project focuses on correctness, simplicity, and learning while providing a s
 ### Persistence
 
 - Write-Ahead Log (WAL)
-- Automatic broker recovery after restart
+- Automatic broker recovery after restart, preserving message queue ownership
 
 ### Networking
 
@@ -59,7 +60,7 @@ The project focuses on correctness, simplicity, and learning while providing a s
 client/          Public Go SDK
 cmd/dsend/       CLI application
 internal/
-    engine/      Broker core
+    engine/      Broker registry and per-queue runtime
     inflight/    In-flight message manager
     protocol/    Wire protocol
     queue/       Ring buffer & DLQ
@@ -117,18 +118,24 @@ go build -o dsend.exe .\cmd\dsend
 
 ---
 
+## Named Queues
+
+DSend supports multiple isolated named queues. Each queue has its own capacity,
+consumers, delivery scheduling, in-flight messages, dead-letter queue, and
+metrics. Publishing or consuming without a queue name uses the `default` queue.
+
 ## Publishing Messages
 
 ### Linux / macOS
 
 ```bash
-./dsend publish "Hello, DSend!"
+./dsend publish --queue orders "Hello, DSend!"
 ```
 
 ### Windows
 
 ```powershell
-.\dsend.exe publish "Hello, DSend!"
+.\dsend.exe publish --queue orders "Hello, DSend!"
 ```
 
 ---
@@ -138,16 +145,23 @@ go build -o dsend.exe .\cmd\dsend
 ### Linux / macOS
 
 ```bash
-./dsend subscribe
+./dsend subscribe --queue orders
 ```
 
 ### Windows
 
 ```powershell
-.\dsend.exe subscribe
+.\dsend.exe subscribe --queue orders
 ```
 
-Messages are automatically acknowledged after successful processing.
+Messages are automatically acknowledged after successful processing. The
+following commands target the compatibility `default` queue when `--queue` is
+omitted:
+
+```text
+dsend publish "Hello, DSend!"
+dsend subscribe
+```
 
 ---
 
@@ -197,6 +211,7 @@ go test -race ./...
 
 ## Current Capabilities
 
+- Multiple named, isolated queues
 - Reliable message delivery
 - ACK-based message processing
 - Automatic retry on ACK timeout
@@ -210,13 +225,6 @@ go test -race ./...
 
 <!--
 ## Roadmap
-
-### v0.2
-
-- Multiple named queues
-- Queue management API
-- Configurable broker settings
-- Improved CLI
 
 ### v0.3
 
