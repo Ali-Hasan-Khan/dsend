@@ -81,11 +81,12 @@ func (c *Consumer) Ack(token string) error {
 	return nil
 }
 
-func (c *Consumer) Subscribe() error {
+func (c *Consumer) Subscribe(queueName string) error {
 	var req protocol.Request
 	req = protocol.Request{
-		Type: protocol.SubscribeRequest,
-		ID:   c.id,
+		Type:  protocol.SubscribeRequest,
+		Queue: queueName,
+		ID:    c.id,
 	}
 
 	if err := c.encoder.Encode(&req); err != nil {

@@ -8,9 +8,17 @@ import (
 	"sync"
 
 	"github.com/Ali-Hasan-Khan/dsend/internal/engine"
+	"github.com/Ali-Hasan-Khan/dsend/internal/model"
 	"github.com/Ali-Hasan-Khan/dsend/internal/protocol"
 	"github.com/Ali-Hasan-Khan/dsend/internal/session"
 )
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
 
 func (s *Server) handleConnection(conn net.Conn, b engine.Broker) {
 	defer conn.Close()
@@ -45,10 +53,11 @@ func (s *Server) handleConnection(conn net.Conn, b engine.Broker) {
 
 		switch req.Type {
 		case protocol.PublishRequest:
-			err := b.Publish(req.Message)
+			err := b.Publish(req.Queue, req.Message)
 			mu.Lock()
 			encoder.Encode(protocol.Response{
 				Success: err == nil,
+				Error:   errorString(err),
 			})
 			mu.Unlock()
 		case protocol.AckRequest:
@@ -57,12 +66,30 @@ func (s *Server) handleConnection(conn net.Conn, b engine.Broker) {
 				mu.Lock()
 				encoder.Encode(protocol.Response{
 					Success: false,
-					Error:   err.Error(),
+					Error:   errorString(err),
 				})
 				mu.Unlock()
 				continue
 			}
 		case protocol.MetricsRequest:
+			if req.Queue != "" {
+				metric, err := b.QueueMetrics(req.Queue)
+
+				mu.Lock()
+				_ = encoder.Encode(protocol.Response{
+					Success: err == nil,
+					Error:   errorString(err),
+					Metrics: model.BrokerMetrics{
+						Queues: []model.QueueMetric{{
+							Name:   req.Queue,
+							Metric: metric,
+						}},
+						Total: metric,
+					},
+				})
+				mu.Unlock()
+				continue
+			}
 			metrics := b.Metrics()
 			mu.Lock()
 			encoder.Encode(protocol.Response{
@@ -78,12 +105,20 @@ func (s *Server) handleConnection(conn net.Conn, b engine.Broker) {
 				continue
 			}
 
-			sess := session.NewConsumerSession(req.ID)
-			b.Subscribe(sess)
+			sessionID := req.ID
+			queueName := req.Queue
+
+			sess := session.NewConsumerSession(sessionID)
+			if err := b.Subscribe(queueName, sess); err != nil {
+				mu.Lock()
+				encoder.Encode(protocol.Response{Success: false, Error: errorString(err)})
+				mu.Unlock()
+				continue
+			}
 
 			stopSubscribe = make(chan struct{})
 			subwg.Add(1)
-			go func(currentStop chan struct{}, currentSess *session.ConsumerSession) {
+			go func(currentStop chan struct{}, currentSess *session.ConsumerSession, sessionID, queueName string) {
 				defer subwg.Done()
 				for {
 					select {
@@ -96,20 +131,50 @@ func (s *Server) handleConnection(conn net.Conn, b engine.Broker) {
 						})
 						mu.Unlock()
 					case <-currentStop:
-						b.Unsubscribe(req.ID)
+						b.Unsubscribe(queueName, sessionID)
 						return
 					}
 				}
-			}(stopSubscribe, sess)
+			}(stopSubscribe, sess, sessionID, queueName)
 		case protocol.UnsubscribeRequest:
-			close(stopSubscribe)
-			subwg.Wait()
+			if stopSubscribe != nil {
+				close(stopSubscribe)
+				subwg.Wait()
+			}
 
 			stopSubscribe = nil
 
 			mu.Lock()
 			encoder.Encode(protocol.Response{
 				Success: true,
+			})
+			mu.Unlock()
+		case protocol.CreateQueueRequest:
+			err := b.CreateQueue(req.Queue)
+			mu.Lock()
+			encoder.Encode(protocol.Response{
+				Success: err == nil,
+				Error:   errorString(err),
+			})
+			mu.Unlock()
+		case protocol.DeleteQueueRequest:
+			err := b.DeleteQueue(req.Queue)
+			mu.Lock()
+			encoder.Encode(protocol.Response{
+				Success: err == nil,
+				Error:   errorString(err),
+			})
+			mu.Unlock()
+		case protocol.ListQueuesRequest:
+			names := b.ListQueues()
+			queues := make([]model.QueueMetric, 0, len(names))
+			for _, name := range names {
+				queues = append(queues, model.QueueMetric{Name: name})
+			}
+			mu.Lock()
+			encoder.Encode(protocol.Response{
+				Success: true,
+				Queues:  queues,
 			})
 			mu.Unlock()
 		default:

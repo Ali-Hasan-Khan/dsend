@@ -13,6 +13,7 @@ import (
 
 func runSubscribe(args []string) error {
 	subscribeCmd := flag.NewFlagSet("subscribe", flag.ExitOnError)
+	queueName := subscribeCmd.String("queue", "default", "target queue")
 	subscribeCmd.Parse(args)
 
 	fmt.Println("Initializing subscription client...")
@@ -25,7 +26,7 @@ func runSubscribe(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err = c.Subscribe(); err != nil {
+	if err = c.Subscribe(*queueName); err != nil {
 		return err
 	}
 
