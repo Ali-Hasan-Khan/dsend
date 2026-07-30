@@ -387,6 +387,12 @@ func (q *QueueRuntime) StartRedeliveryWorker(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
+			q.mu.Lock()
+			closed := q.closed
+			q.mu.Unlock()
+			if closed {
+				return
+			}
 			q.processExpiredMessages()
 		case <-ctx.Done():
 			return

@@ -17,6 +17,9 @@ func runQueue(args []string) error {
 	queueCmd := flag.NewFlagSet("queue", flag.ExitOnError)
 	queueCmd.Parse(args)
 	remainingArgs := queueCmd.Args()
+	if len(remainingArgs) < 1 {
+		return errors.New("Error: expected 'create', 'delete', or 'list' subcommand")
+	}
 
 	cmd := remainingArgs[0]
 

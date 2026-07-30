@@ -126,13 +126,13 @@ func (c *Producer) QueueMetrics(ctx context.Context, queueName string) (*model.Q
 		return nil, errors.New(resp.Error)
 	}
 
-	for _, qm := range resp.Metrics.Queues {
-		if qm.Name == queueName {
-			return &qm, nil
+	for i := range resp.Metrics.Queues {
+		if resp.Metrics.Queues[i].Name == queueName {
+			return &resp.Metrics.Queues[i], nil
 		}
 	}
 
-	return nil, errors.New("Queue Metrics Not found")
+	return nil, errors.New("queue metrics not found for " + queueName)
 }
 
 func (c *Producer) CreateQueue(ctx context.Context, name string) error {
