@@ -50,7 +50,9 @@ The project focuses on correctness, simplicity, and learning while providing a s
 
 ## Architecture
 
-<img width="1200" height="461" alt="Architecture" src="https://github.com/user-attachments/assets/58781269-7a57-4d71-9afd-add79279020e" />
+<!-- <img width="1200" height="461" alt="Architecture" src="https://github.com/user-attachments/assets/58781269-7a57-4d71-9afd-add79279020e" /> -->
+<img width="1217" height="571" alt="image" src="https://github.com/user-attachments/assets/543b4d25-4ef9-4b12-9247-cc8fdf0b93da" />
+
 
 ---
 
