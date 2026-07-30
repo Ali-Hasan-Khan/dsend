@@ -299,6 +299,13 @@ func (q *QueueRuntime) reserveDelivery() (*session.ConsumerSession, model.Delive
 
 func (q *QueueRuntime) RunDistributor(ctx context.Context) {
 	for {
+		q.mu.Lock()
+		closed := q.closed
+		q.mu.Unlock()
+		if closed {
+			return
+		}
+
 		select {
 		case <-q.notifyDistributor:
 			for {
