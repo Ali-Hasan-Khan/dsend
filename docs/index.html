@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DSend — A queue-based message broker for Go</title>
+  <meta name="description" content="DSend is a lightweight queue-based message broker written from scratch in Go. Publish, consume, and acknowledge messages with durable storage, retries, dead-lettering, and runtime metrics over a plain TCP/JSON protocol.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111111'/%3E%3Ctext x='16' y='23' font-family='ui-monospace,monospace' font-size='18' font-weight='700' fill='%23ffffff' text-anchor='middle'%3ED%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container nav">
+    <a class="brand" href="index.html">
+      <span class="brand-mark">D</span>
+      <span>DSend<span class="brand-accent">.</span></span>
+    </a>
+    <nav class="nav-links" id="navLinks">
+      <a href="#features">Features</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#quickstart">Quickstart</a>
+      <a href="sdk.html">Docs</a>
+      <a href="https://github.com/Ali-Hasan-Khan/dsend">GitHub</a>
+      <a class="btn btn-primary btn-sm" href="sdk.html#quickstart">Get started</a>
+    </nav>
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<main>
+
+  <section class="hero">
+    <div class="container hero-grid">
+      <div>
+        <span class="eyebrow">Queue-based message broker for Go</span>
+        <h1>Reliable messaging, <span class="h1-accent">written from scratch.</span></h1>
+        <p class="hero-lead">
+          DSend is a lightweight message broker built in Go — no Kafka, no RabbitMQ, no dependencies.
+          Publish, consume, and acknowledge messages with durable storage, retries, and dead-lettering,
+          all over a plain TCP/JSON protocol.
+        </p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="sdk.html#quickstart">Get started</a>
+          <a class="btn btn-secondary" href="sdk.html">Read the docs</a>
+        </div>
+        <p class="hero-meta">
+          MIT license &middot; Go 1.25 &middot;
+          <a href="https://github.com/Ali-Hasan-Khan/dsend">github.com/Ali-Hasan-Khan/dsend</a>
+        </p>
+      </div>
+
+      <div>
+        <div class="code-block terminal">
+          <div class="code-block-head">
+            <span class="code-block-name">dsend — a working broker in one binary</span>
+            <button class="code-copy" data-copy>Copy</button>
+          </div>
+<pre><code><span class="comment"># terminal 1 — start the broker</span>
+<span class="prompt">$</span> go build -o dsend ./cmd/dsend
+<span class="prompt">$</span> ./dsend server
+<span class="comment">[server] listening on 127.0.0.1:8080
+[wal]    appending to ./data/wal.log
+
+# terminal 2 — publish a message
+# terminal 3 — subscribe and receive it</span>
+<span class="prompt">$</span> ./dsend publish --queue orders "order-1042 created"
+<span class="tok-str">Message Sent successfully</span>
+
+<span class="prompt">$</span> ./dsend subscribe --queue orders
+<span class="tok-str">Received message: order-1042 created</span></code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="features">
+    <div class="container">
+      <div class="section-head center">
+        <span class="eyebrow">What you get</span>
+        <h2>Everything a broker needs. Nothing it doesn't.</h2>
+        <p>Six core building blocks, implemented from scratch and exposed through a small, typed Go SDK.</p>
+      </div>
+
+      <div class="feature-grid">
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/><path d="m3 18 9 5 9-5"/></svg>
+          </div>
+          <h3>Named queues</h3>
+          <p>Isolated in-memory ring buffers. Publish to any queue name, or the default queue when none is given.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21.8 10A10 10 0 1 1 17 3.34"/><path d="m9 11 3 3L22 4"/></svg>
+          </div>
+          <h3>At-least-once delivery</h3>
+          <p>Delivered messages are tracked in flight until a consumer acknowledges them. Nothing is silently lost.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+          </div>
+          <h3>ACK + redelivery</h3>
+          <p>Messages that aren't acknowledged within the timeout are redelivered, up to a configured retry limit.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/></svg>
+          </div>
+          <h3>Dead-letter queue</h3>
+          <p>Messages that exhaust their retries move to a per-queue DLQ instead of vanishing into the void.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>
+          </div>
+          <h3>Durable write-ahead log</h3>
+          <p>Every publish, ack, and requeue is appended to a WAL. Restart the broker and the queues come back.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15v3"/><path d="M12 10v8"/><path d="M17 6v12"/></svg>
+          </div>
+          <h3>Runtime metrics</h3>
+          <p>Produced, acked, in-flight, redelivered, DLQ depth, and consumer sessions — per queue or broker-wide.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-alt" id="architecture">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">How it works</span>
+        <h2>Producers push. Consumers pull with a broker in between.</h2>
+        <p>One TCP connection per client, JSON on the wire, and a broker core that schedules delivery round-robin across consumers.</p>
+      </div>
+
+      <div class="arch">
+        <div class="arch-node">
+          <h4><span class="dot"></span>Producer</h4>
+          <p>client.NewProducer</p>
+          <ul>
+            <li>Publish</li>
+            <li>Metrics</li>
+            <li>Queue admin</li>
+          </ul>
+        </div>
+        <div class="arch-wire"><span>TCP &middot; JSON</span></div>
+        <div class="arch-node broker">
+          <h4><span class="dot"></span>Broker</h4>
+          <p>per-queue runtime</p>
+          <ul>
+            <li>ring buffer</li>
+            <li>in-flight</li>
+            <li>DLQ</li>
+            <li>WAL</li>
+          </ul>
+        </div>
+        <div class="arch-wire"><span>round-robin</span></div>
+        <div class="arch-node">
+          <h4><span class="dot"></span>Consumer</h4>
+          <p>client.NewConsumer</p>
+          <ul>
+            <li>Subscribe</li>
+            <li>Receive</li>
+            <li>Ack</li>
+          </ul>
+        </div>
+      </div>
+
+      <p class="arch-caption">
+        <span class="arrow">&#8617;</span>
+        Consumers return an ack token after processing; the broker removes the message from its in-flight
+        registry. Unacked messages are redelivered <code>ack-timeout</code> later.
+      </p>
+    </div>
+  </section>
+
+  <section class="section" id="quickstart">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Quickstart</span>
+        <h2>A producer and a consumer, in two files.</h2>
+        <p>The SDK is a single Go package: <code class="inline-code">github.com/Ali-Hasan-Khan/dsend/client</code>.</p>
+      </div>
+
+      <div class="split-cols">
+        <div class="code-block">
+          <div class="code-block-head">
+            <span class="code-block-name">producer.go</span>
+            <button class="code-copy" data-copy>Copy</button>
+          </div>
+<pre><code>package main
+
+import (
+  "context"
+  "fmt"
+
+  "github.com/Ali-Hasan-Khan/dsend/client"
+)
+
+func main() {
+  p, err := client.NewProducer("localhost:8080")
+  if err != nil {
+    panic(err)
+  }
+  defer p.Close()
+
+  err = p.Publish(context.Background(),
+    "orders", "order-1042 created")
+  if err != nil {
+    panic(err)
+  }
+  fmt.Println("published")
+}</code></pre>
+        </div>
+
+        <div class="code-block">
+          <div class="code-block-head">
+            <span class="code-block-name">consumer.go</span>
+            <button class="code-copy" data-copy>Copy</button>
+          </div>
+<pre><code>package main
+
+import (
+  "context"
+  "fmt"
+
+  "github.com/Ali-Hasan-Khan/dsend/client"
+)
+
+func main() {
+  c, err := client.NewConsumer("localhost:8080")
+  if err != nil {
+    panic(err)
+  }
+  defer c.Close()
+
+  if err := c.Subscribe("orders"); err != nil {
+    panic(err)
+  }
+
+  for {
+    msg, err := c.Receive(context.Background())
+    if err != nil {
+      panic(err)
+    }
+    fmt.Println("got:", msg.Payload)
+    c.Ack(msg.AckToken) // mark as processed
+  }
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <h3>Start the broker</h3>
+          <p>Build and run the server. It listens on <code class="inline-code">127.0.0.1:8080</code> and persists to <code class="inline-code">./data/wal.log</code>.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <h3>Run the producer</h3>
+          <p>Open a connection and call <code class="inline-code">Publish</code>. The message is appended to the WAL before it's queued.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <h3>Consume &amp; ack</h3>
+          <p>Subscribe, receive deliveries, and call <code class="inline-code">Ack</code> after processing. Failures are redelivered automatically.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-alt" id="metrics">
+    <div class="container metrics-band">
+      <div>
+        <span class="eyebrow">Observability</span>
+        <h2>See what the broker is doing, at a glance.</h2>
+        <p>Query broker-wide or per-queue metrics through the SDK or the CLI. Every counter tracks a concrete delivery event.</p>
+        <dl class="metrics-list">
+          <div>
+            <dt>ProducedCount</dt>
+            <dd>messages appended to the WAL and queued</dd>
+          </div>
+          <div>
+            <dt>AckedCount</dt>
+            <dd>messages acknowledged by consumers</dd>
+          </div>
+          <div>
+            <dt>QueueDepth / InflightCount</dt>
+            <dd>waiting in the ring buffer vs. reserved by a consumer</dd>
+          </div>
+          <div>
+            <dt>RedeliveredCount / DlqCount</dt>
+            <dd>requeued after ack timeout vs. dead-lettered after retries</dd>
+          </div>
+        </dl>
+        <a class="btn btn-secondary" href="sdk.html#observability">Metrics reference</a>
+      </div>
+
+      <div class="code-block terminal">
+        <div class="code-block-head">
+          <span class="code-block-name">$ ./dsend metrics --queue orders</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code><span class="comment">Queue: orders
+
+ProducedCount:        10
+QueueDepth:            0
+InflightCount:         0
+DlqCount:              0
+ConsumerSessionCount:  1
+AckedCount:           10
+RedeliveredCount:      0</span></code></pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta">
+    <div class="container">
+      <div>
+        <h2>Ready to move messages between Go services?</h2>
+        <p>Read the SDK docs and get your first producer running in five minutes.</p>
+      </div>
+      <a class="btn btn-primary" href="sdk.html">Open the docs</a>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container footer-grid">
+    <p>DSend &middot; MIT License &middot; Built in Go, from scratch.</p>
+    <div class="footer-links">
+      <a href="sdk.html">Documentation</a>
+      <a href="https://github.com/Ali-Hasan-Khan/dsend">GitHub</a>
+      <a href="https://github.com/Ali-Hasan-Khan/dsend/blob/main/LICENSE">License</a>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/main.js"></script>
+</body>
+</html>

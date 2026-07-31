@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Client SDK documentation — DSend</title>
+  <meta name="description" content="DSend client SDK documentation: install, quickstart, Producer and Consumer API reference, queue management, metrics, CLI, and delivery semantics.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111111'/%3E%3Ctext x='16' y='23' font-family='ui-monospace,monospace' font-size='18' font-weight='700' fill='%23ffffff' text-anchor='middle'%3ED%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container nav">
+    <a class="brand" href="index.html">
+      <span class="brand-mark">D</span>
+      <span>DSend<span class="brand-accent">.</span></span>
+    </a>
+    <nav class="nav-links" id="navLinks">
+      <a href="index.html">Home</a>
+      <a href="index.html#features">Features</a>
+      <a href="index.html#architecture">Architecture</a>
+      <a href="https://github.com/Ali-Hasan-Khan/dsend">GitHub</a>
+      <a class="btn btn-primary btn-sm" href="#quickstart">Get started</a>
+    </nav>
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<div class="container docs-layout">
+  <aside class="docs-sidebar">
+    <nav>
+      <div class="docs-group-label">Getting started</div>
+      <a href="#overview">Overview</a>
+      <a href="#quickstart">Quickstart</a>
+
+      <div class="docs-group-label">Client SDK</div>
+      <a href="#producer">Producer</a>
+      <a href="#consumer">Consumer</a>
+
+      <div class="docs-group-label">Queues</div>
+      <a href="#queues">Managing queues</a>
+
+      <div class="docs-group-label">Observability</div>
+      <a href="#observability">Metrics</a>
+
+      <div class="docs-group-label">Reference</div>
+      <a href="#cli">CLI</a>
+      <a href="#protocol">Wire protocol</a>
+      <a href="#semantics">Delivery semantics</a>
+    </nav>
+  </aside>
+
+  <main class="docs-content">
+
+    <h1 class="doc-title">Client SDK</h1>
+    <p class="doc-subtitle">
+      A single Go package for everything DSend does: publish, consume, acknowledge,
+      manage queues, and read broker metrics.
+    </p>
+
+    <!-- ===================== Overview ===================== -->
+    <section id="overview">
+      <h2>Overview</h2>
+      <p>
+        The SDK lives in <code class="inline-code">github.com/Ali-Hasan-Khan/dsend/client</code>.
+        It exposes two clients that mirror the broker's two roles:
+      </p>
+      <ul>
+        <li><code class="inline-code">Producer</code> — publishes messages and manages queues.</li>
+        <li><code class="inline-code">Consumer</code> — subscribes to a queue, receives deliveries, and acknowledges them.</li>
+      </ul>
+      <p>
+        Each client holds a single persistent TCP connection to the broker and speaks the JSON
+        wire protocol directly. No HTTP, no auto-reconnect, no magic — just synchronous calls and
+        explicit <code class="inline-code">context.Context</code> handling.
+      </p>
+      <div class="callout">
+        <div>
+          <strong>Addresses.</strong> The broker listens on
+          <code class="inline-code">127.0.0.1:8080</code> by default. Pass that as the
+          <code class="inline-code">addr</code> argument to <code class="inline-code">NewProducer</code> and
+          <code class="inline-code">NewConsumer</code>. The CLI hard-codes the same address.
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== Quickstart ===================== -->
+    <section id="quickstart">
+      <h2>Quickstart</h2>
+
+      <h3>1. Start the broker</h3>
+      <p>Build and run the server. It binds <code class="inline-code">127.0.0.1:8080</code> and appends to <code class="inline-code">./data/wal.log</code>.</p>
+      <div class="code-block terminal">
+        <div class="code-block-head">
+          <span class="code-block-name">terminal</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code><span class="prompt">$</span> go build -o dsend ./cmd/dsend
+<span class="prompt">$</span> ./dsend server</code></pre>
+      </div>
+
+      <h3>2. Publish</h3>
+      <div class="code-block">
+        <div class="code-block-head">
+          <span class="code-block-name">main.go</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code>package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/Ali-Hasan-Khan/dsend/client"
+)
+
+func main() {
+	p, err := client.NewProducer("localhost:8080")
+	if err != nil {
+		panic(err)
+	}
+	defer p.Close()
+
+	if err := p.Publish(context.Background(), "orders", "order-1042 created"); err != nil {
+		panic(err)
+	}
+	fmt.Println("published")
+}</code></pre>
+      </div>
+
+      <h3>3. Consume and acknowledge</h3>
+      <div class="code-block">
+        <div class="code-block-head">
+          <span class="code-block-name">main.go</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code>package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/Ali-Hasan-Khan/dsend/client"
+)
+
+func main() {
+	c, err := client.NewConsumer("localhost:8080")
+	if err != nil {
+		panic(err)
+	}
+	defer c.Close()
+
+	if err := c.Subscribe("orders"); err != nil {
+		panic(err)
+	}
+
+	for {
+		msg, err := c.Receive(context.Background())
+		if err != nil {
+			panic(err)
+		}
+
+		// do real work here...
+		fmt.Println("received:", msg.Payload)
+
+		if err := c.Ack(msg.AckToken); err != nil {
+			panic(err)
+		}
+	}
+}</code></pre>
+      </div>
+
+      <div class="callout">
+        <div>
+          <strong>Don't skip the ack.</strong> DSend guarantees at-least-once delivery. Until you call
+          <code class="inline-code">Ack(msg.AckToken)</code>, the message stays in the broker's in-flight
+          registry and will be redelivered if you take too long. See
+          <a href="#semantics" style="text-decoration:underline">Delivery semantics</a>.
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== Producer ===================== -->
+    <section id="producer">
+      <h2>Producer</h2>
+      <p>
+        A producer dials the broker once and keeps the connection open. All methods take a
+        <code class="inline-code">context.Context</code> so you can time out or cancel cleanly.
+      </p>
+
+      <h3>Construct</h3>
+      <div class="method-sig"><span class="sig-name">NewProducer</span><span>(addr string) (*Producer, error)</span></div>
+      <p>Opens a persistent TCP connection to the broker at <code class="inline-code">addr</code>.</p>
+
+      <h3>Methods</h3>
+      <table>
+        <thead>
+          <tr><th>Method</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Publish(ctx, queueName, payload)</code></td>
+            <td>Appends a message to the named queue. Publishes to the <code>default</code> queue when <code>queueName</code> is empty.</td>
+          </tr>
+          <tr>
+            <td><code>CreateQueue(ctx, name)</code></td>
+            <td>Creates a named queue.</td>
+          </tr>
+          <tr>
+            <td><code>DeleteQueue(ctx, name)</code></td>
+            <td>Deletes a named queue.</td>
+          </tr>
+          <tr>
+            <td><code>ListQueues(ctx) ([]string, error)</code></td>
+            <td>Returns the names of all queues on the broker.</td>
+          </tr>
+          <tr>
+            <td><code>Metrics(ctx) (*BrokerMetrics, error)</code></td>
+            <td>Returns broker-wide metrics plus a breakdown per queue.</td>
+          </tr>
+          <tr>
+            <td><code>QueueMetrics(ctx, queueName) (*QueueMetric, error)</code></td>
+            <td>Returns metrics for a single queue.</td>
+          </tr>
+          <tr>
+            <td><code>Close() error</code></td>
+            <td>Closes the underlying connection. Always defer this.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Publishing</h3>
+      <p>
+        Payloads are strings. Keep the payload small and treat it as opaque — the broker never inspects
+        the contents. A message is written to the WAL <em>before</em> it is queued, so a crash between
+        the two steps doesn't lose it.
+      </p>
+      <div class="code-block">
+        <div class="code-block-head">
+          <span class="code-block-name">publish.go</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code>ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+
+// Named queue. The queue is created implicitly on first publish.
+err := p.Publish(ctx, "emails", `{"to":"ada@example.com","subject":"hi"}`)
+
+// Default queue — no name required.
+err = p.Publish(ctx, "", "hello, world")</code></pre>
+      </div>
+      <div class="callout">
+        <div>
+          <strong>Blocking on full queues.</strong> Each queue is a fixed-size ring buffer (capacity 20 by
+          default). When the queue is full, <code class="inline-code">Publish</code> blocks until a consumer
+          frees space or the context is cancelled.
+        </div>
+      </div>
+
+      <h3>Queue administration</h3>
+      <div class="code-block">
+        <div class="code-block-head">
+          <span class="code-block-name">admin.go</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code>if err := p.CreateQueue(ctx, "orders"); err != nil {
+	panic(err)
+}
+
+names, err := p.ListQueues(ctx)
+if err != nil {
+	panic(err)
+}
+fmt.Println(names) // ["default", "orders"]
+
+if err := p.DeleteQueue(ctx, "orders"); err != nil {
+	panic(err)
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- ===================== Consumer ===================== -->
+    <section id="consumer">
+      <h2>Consumer</h2>
+      <p>
+        A consumer is push-based: subscribe once, then loop on <code class="inline-code">Receive</code>.
+        The broker schedules deliveries round-robin across all consumers subscribed to a queue.
+      </p>
+
+      <h3>Construct &amp; subscribe</h3>
+      <div class="method-sig"><span class="sig-name">NewConsumer</span><span>(addr string) (*Consumer, error)</span></div>
+      <div class="method-sig"><span class="sig-name">Subscribe</span><span>(queueName string) error</span></div>
+      <p>
+        <code class="inline-code">Subscribe</code> registers this connection as a consumer session for the
+        queue. One consumer connection can subscribe to a single queue at a time.
+      </p>
+
+      <h3>Receiving</h3>
+      <div class="method-sig"><span class="sig-name">Receive</span><span>(ctx context.Context) (*ReceivedMessage, error)</span></div>
+      <p>Blocks until the broker pushes the next delivery. A <code class="inline-code">ReceivedMessage</code> carries:</p>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Meaning</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>ID</code></td><td>string</td><td>Unique message identifier.</td></tr>
+          <tr><td><code>Payload</code></td><td>string</td><td>Opaque message body.</td></tr>
+          <tr><td><code>AckToken</code></td><td>string</td><td>Proof of delivery; pass it to <code>Ack</code>.</td></tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <div>
+          <strong>Receive timeouts.</strong> <code class="inline-code">Receive</code> sets a 10-second read
+          deadline on the socket and returns an error if no delivery arrives in time. In a real consumer,
+          retry <code class="inline-code">Receive</code> in a loop instead of exiting.
+        </div>
+      </div>
+
+      <h3>Acknowledging</h3>
+      <div class="method-sig"><span class="sig-name">Ack</span><span>(token string) error</span></div>
+      <p>
+        Tell the broker the message was processed successfully. The broker removes the ack token from its
+        in-flight registry and never redelivers that message.
+      </p>
+      <div class="code-block">
+        <div class="code-block-head">
+          <span class="code-block-name">consumer.go</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code>for {
+	msg, err := c.Receive(ctx)
+	if err != nil {
+		// transient read deadline or network error; try again
+		if ctx.Err() != nil {
+			return // caller cancelled
+		}
+		continue
+	}
+
+	if err := handle(msg.Payload); err != nil {
+		// skip ack: the broker will redeliver later
+		continue
+	}
+
+	if err := c.Ack(msg.AckToken); err != nil {
+		return
+	}
+}</code></pre>
+      </div>
+
+      <h3>Unsubscribing</h3>
+      <div class="method-sig"><span class="sig-name">Unsubscribe</span><span>() error</span></div>
+      <p>
+        Removes this session from the queue's round-robin rotation and stops deliveries. Closing the
+        connection also unregisters the session.
+      </p>
+    </section>
+
+    <!-- ===================== Queues ===================== -->
+    <section id="queues">
+      <h2>Managing queues</h2>
+      <p>
+        A queue is an isolated, fixed-capacity in-memory ring buffer with its own consumers, in-flight
+        messages, DLQ, and metrics. The <code class="inline-code">default</code> queue exists implicitly;
+        publishing to any other name creates the queue on first use.
+      </p>
+      <ul>
+        <li><strong>Implicit creation</strong> — publishing to <code class="inline-code">orders</code> creates it if it doesn't exist.</li>
+        <li><strong>Explicit creation</strong> — <code class="inline-code">CreateQueue</code> if you want to manage it up front.</li>
+        <li><strong>Capacity</strong> — 20 messages per queue by default (see <a href="#semantics" style="text-decoration:underline">configuration</a>).</li>
+        <li><strong>Deletion</strong> — <code class="inline-code">DeleteQueue</code> removes the queue from the broker.</li>
+      </ul>
+      <div class="code-block terminal">
+        <div class="code-block-head">
+          <span class="code-block-name">cli</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code><span class="prompt">$</span> ./dsend queue create orders
+<span class="tok-str">Queue created successfully</span>
+
+<span class="prompt">$</span> ./dsend queue list
+<span class="tok-str">Queues: [default orders]</span>
+
+<span class="prompt">$</span> ./dsend queue delete orders
+<span class="tok-str">Queue deleted successfully</span></code></pre>
+      </div>
+    </section>
+
+    <!-- ===================== Observability ===================== -->
+    <section id="observability">
+      <h2>Metrics</h2>
+      <p>
+        Every counter maps to a concrete delivery event. Query broker-wide metrics or scope them to one
+        queue. The CLI exposes the same data:
+        <code class="inline-code">./dsend metrics</code> or
+        <code class="inline-code">./dsend metrics --queue orders</code>.
+      </p>
+
+      <h3>Types</h3>
+      <div class="code-block">
+        <div class="code-block-head">
+          <span class="code-block-name">internal/model/metrics.go</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code>type Metric struct {
+	ProducedCount        int
+	AckedCount           int
+	DlqCount             int
+	InflightCount        int
+	RedeliveredCount     int
+	ConsumerSessionCount int
+	QueueDepth           int
+}
+
+type QueueMetric struct {
+	Name string
+	Metric
+}
+
+type BrokerMetrics struct {
+	Queues []QueueMetric
+	Total  Metric
+}</code></pre>
+      </div>
+
+      <h3>Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Meaning</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>ProducedCount</code></td><td>Messages published to the queue.</td></tr>
+          <tr><td><code>AckedCount</code></td><td>Messages acknowledged by consumers.</td></tr>
+          <tr><td><code>QueueDepth</code></td><td>Messages currently waiting in the ring buffer.</td></tr>
+          <tr><td><code>InflightCount</code></td><td>Messages delivered but not yet acknowledged.</td></tr>
+          <tr><td><code>RedeliveredCount</code></td><td>Messages requeued after an ack timeout.</td></tr>
+          <tr><td><code>DlqCount</code></td><td>Messages dead-lettered after exhausting retries.</td></tr>
+          <tr><td><code>ConsumerSessionCount</code></td><td>Connected consumers subscribed to the queue.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="code-block">
+        <div class="code-block-head">
+          <span class="code-block-name">metrics.go</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code>m, err := p.Metrics(ctx)
+if err != nil {
+	panic(err)
+}
+
+for _, q := range m.Queues {
+	fmt.Printf("%s: depth=%d in-flight=%d acked=%d\n",
+		q.Name, q.QueueDepth, q.InflightCount, q.AckedCount)
+}
+
+q, err := p.QueueMetrics(ctx, "orders")
+if err != nil {
+	panic(err)
+}
+fmt.Println(q.DlqCount)</code></pre>
+      </div>
+    </section>
+
+    <!-- ===================== CLI ===================== -->
+    <section id="cli">
+      <h2>CLI reference</h2>
+      <p>The <code class="inline-code">dsend</code> binary wraps the SDK for scripting and quick tests.</p>
+      <table>
+        <thead>
+          <tr><th>Command</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>dsend server</code></td>
+            <td>Starts the broker on <code>127.0.0.1:8080</code> with the WAL at <code>./data/wal.log</code>.</td>
+          </tr>
+          <tr>
+            <td><code>dsend publish [--queue &lt;name&gt;] "&lt;message&gt;"</code></td>
+            <td>Publishes a message. Defaults to the <code>default</code> queue.</td>
+          </tr>
+          <tr>
+            <td><code>dsend subscribe [--queue &lt;name&gt;]</code></td>
+            <td>Subscribes, receives messages, and acks each one. Ctrl-C to stop.</td>
+          </tr>
+          <tr>
+            <td><code>dsend metrics [--queue &lt;name&gt;]</code></td>
+            <td>Prints broker metrics. Scopes to one queue with <code>--queue</code>.</td>
+          </tr>
+          <tr>
+            <td><code>dsend queue create &lt;name&gt;</code></td>
+            <td>Creates a named queue.</td>
+          </tr>
+          <tr>
+            <td><code>dsend queue delete &lt;name&gt;</code></td>
+            <td>Deletes a named queue.</td>
+          </tr>
+          <tr>
+            <td><code>dsend queue list</code></td>
+            <td>Lists all queue names.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <div>
+          The CLI targets <code class="inline-code">localhost:8080</code> and the broker must be running
+          first. There's no persistence across <code class="inline-code">dsend server</code> restarts beyond
+          what the WAL recovers.
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== Wire protocol ===================== -->
+    <section id="protocol">
+      <h2>Wire protocol</h2>
+      <p>
+        Clients and broker exchange length-delimited JSON over TCP. Each message is a request with a
+        <code class="inline-code">type</code> field; the broker replies with a
+        <code class="inline-code">response</code> carrying <code class="inline-code">success</code> and, on
+        failure, <code class="inline-code">error</code>.
+      </p>
+
+      <h3>Request types</h3>
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Sent by</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>publish</code></td><td>Producer</td><td>Append a message to a queue.</td></tr>
+          <tr><td><code>subscribe</code></td><td>Consumer</td><td>Register a consumer session for a queue.</td></tr>
+          <tr><td><code>ack</code></td><td>Consumer</td><td>Acknowledge a delivery by token.</td></tr>
+          <tr><td><code>unsubscribe</code></td><td>Consumer</td><td>Leave the queue's round-robin rotation.</td></tr>
+          <tr><td><code>metrics</code></td><td>Producer</td><td>Fetch broker-wide or per-queue metrics.</td></tr>
+          <tr><td><code>create_queue</code></td><td>Producer</td><td>Create a named queue.</td></tr>
+          <tr><td><code>delete_queue</code></td><td>Producer</td><td>Delete a named queue.</td></tr>
+          <tr><td><code>list_queues</code></td><td>Producer</td><td>List all queue names.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Example</h3>
+      <div class="code-block">
+        <div class="code-block-head">
+          <span class="code-block-name">client → broker</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code>{"type":"publish","queue":"orders","message":{"payload":"order-1042 created"}}</code></pre>
+      </div>
+      <div class="code-block">
+        <div class="code-block-head">
+          <span class="code-block-name">broker → client</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code>{"success":true,"error":""}</code></pre>
+      </div>
+      <div class="code-block">
+        <div class="code-block-head">
+          <span class="code-block-name">broker → consumer (delivery)</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code>{
+  "success": true,
+  "message": {
+    "id": "a1b2c3d4-...",
+    "payload": "order-1042 created",
+    "timestamp": "2026-07-31T12:00:00Z",
+    "retry": 0
+  },
+  "ack_token": "9f8e7d6c-..."
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- ===================== Semantics ===================== -->
+    <section id="semantics">
+      <h2>Delivery semantics</h2>
+
+      <h3>Push with round-robin</h3>
+      <p>
+        The broker pushes deliveries to subscribed consumers in round-robin order. Add more consumers to
+        a queue and load is spread across them automatically. Each consumer receives one message at a time.
+      </p>
+
+      <h3>At-least-once</h3>
+      <p>
+        When a message is delivered, the broker moves it from the ring buffer into an in-flight registry
+        keyed by ack token. It stays there until one of three things happens:
+      </p>
+      <ol>
+        <li><strong>Ack</strong> — the consumer processed it; it's removed permanently.</li>
+        <li><strong>Ack timeout</strong> — if the consumer doesn't ack within <code class="inline-code">AckTimeout</code>, the message is requeued and redelivered.</li>
+        <li><strong>Retry limit</strong> — after <code class="inline-code">MaxRetries</code> redeliveries, the message is moved to the queue's DLQ.</li>
+      </ol>
+
+      <div class="callout">
+        <div>
+          <strong>Ordering.</strong> A message can be delivered more than once (at-least-once, not
+          exactly-once). Make your consumers idempotent when duplicate processing matters.
+        </div>
+      </div>
+
+      <h3>Default configuration</h3>
+      <table>
+        <thead>
+          <tr><th>Setting</th><th>Default</th><th>Effect</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>AckTimeout</code></td><td>100 s</td><td>How long a delivery may sit unacked before redelivery.</td></tr>
+          <tr><td><code>RedeliveryInterval</code></td><td>5 s</td><td>How often expired in-flight messages are swept.</td></tr>
+          <tr><td><code>MaxRetries</code></td><td>3</td><td>Redeliveries before a message is dead-lettered.</td></tr>
+          <tr><td><code>QueueSize</code></td><td>20</td><td>Capacity of each queue's ring buffer.</td></tr>
+        </tbody>
+      </table>
+      <p>
+        Configuration is set in <code class="inline-code">engine.DefaultConfig()</code> at broker startup
+        (<code class="inline-code">cmd/dsend/server.go</code>).
+      </p>
+
+      <h3>Dead-letter queue</h3>
+      <p>
+        Each queue has its own DLQ. Messages that exhaust their retries land there instead of being
+        dropped. The <code class="inline-code">DlqCount</code> metric tracks how many have.
+      </p>
+
+      <h3>Persistence &amp; recovery</h3>
+      <p>
+        The broker appends every state change — publish, ack, requeue, dead-letter — to a
+        write-ahead log. On restart it replays the WAL and rebuilds queues, in-flight state, and session
+        ownership.
+      </p>
+    </section>
+
+  </main>
+</div>
+
+<footer class="site-footer">
+  <div class="container footer-grid">
+    <p>DSend &middot; MIT License &middot; Built in Go, from scratch.</p>
+    <div class="footer-links">
+      <a href="index.html">Home</a>
+      <a href="https://github.com/Ali-Hasan-Khan/dsend">GitHub</a>
+      <a href="https://github.com/Ali-Hasan-Khan/dsend/blob/main/LICENSE">License</a>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/main.js"></script>
+</body>
+</html>
