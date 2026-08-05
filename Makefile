@@ -17,9 +17,10 @@ endif
 PKG_LIST := $(shell go list ./... | grep -v /vendor)
 
 # Release metadata, injected into the binary at link time.
+# Defaults come from git; CI overrides them with the actual commit SHA.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-BUILD   := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD   ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
 LDFLAGS := -s -w \
 	-X main.Version=$(VERSION) \

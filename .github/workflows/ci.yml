@@ -44,8 +44,19 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Resolve version metadata
+        id: meta
+        run: |
+          SHA="${{ github.event.pull_request.head.sha || github.sha }}"
+          SHORT="$(printf '%s' "$SHA" | cut -c1-7)"
+          echo "commit=$SHORT" >> "$GITHUB_OUTPUT"
+          echo "version=$SHORT" >> "$GITHUB_OUTPUT"
+
       - name: Build
         run: make build
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          COMMIT: ${{ steps.meta.outputs.commit }}
 
       - name: Verify version metadata
         run: ./bin/dsend version
