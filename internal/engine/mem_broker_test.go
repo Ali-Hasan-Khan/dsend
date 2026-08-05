@@ -86,6 +86,9 @@ func TestInMemoryBrokerRoutesMessagesToTheirQueue(t *testing.T) {
 		if err := broker.CreateQueue(name); err != nil {
 			t.Fatalf("create %s: %v", name, err)
 		}
+		if err := broker.BindQueue(model.DefaultExchangeName, name, name); err != nil {
+			t.Fatalf("bind %s: %v", name, err)
+		}
 	}
 
 	ordersConsumer := session.NewConsumerSession("orders-consumer")
@@ -98,10 +101,10 @@ func TestInMemoryBrokerRoutesMessagesToTheirQueue(t *testing.T) {
 		t.Fatalf("subscribe payments: %v", err)
 	}
 
-	if err := broker.Publish("orders", model.Message{Payload: "order-1"}); err != nil {
+	if err := broker.Publish(model.DefaultExchangeName, "orders", model.Message{Payload: "order-1"}); err != nil {
 		t.Fatalf("publish orders: %v", err)
 	}
-	if err := broker.Publish("payments", model.Message{Payload: "payment-1"}); err != nil {
+	if err := broker.Publish(model.DefaultExchangeName, "payments", model.Message{Payload: "payment-1"}); err != nil {
 		t.Fatalf("publish payments: %v", err)
 	}
 
@@ -139,7 +142,10 @@ func TestInMemoryBrokerRejectsDeletingNonEmptyQueue(t *testing.T) {
 	if err := broker.CreateQueue("orders"); err != nil {
 		t.Fatalf("create queue: %v", err)
 	}
-	if err := broker.Publish("orders", model.Message{Payload: "order-1"}); err != nil {
+	if err := broker.BindQueue(model.DefaultExchangeName, "orders", "orders"); err != nil {
+		t.Fatalf("bind queue: %v", err)
+	}
+	if err := broker.Publish(model.DefaultExchangeName, "orders", model.Message{Payload: "order-1"}); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 

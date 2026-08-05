@@ -17,8 +17,14 @@ type WAL interface {
 	Load() (RecoveredState, error)
 }
 
+type ExchangeState struct {
+	ExchangeType string
+	Bindings     []model.Binding
+}
+
 type RecoveredState struct {
-	PendingMessages map[string][]model.Message
+	PendingMessages  map[string][]model.Message
+	PendingExchanges map[string]*ExchangeState
 }
 
 type FileWAL struct {
@@ -76,7 +82,8 @@ func (f *FileWAL) Load() (RecoveredState, error) {
 	defer file.Close()
 
 	state := RecoveredState{
-		PendingMessages: make(map[string][]model.Message),
+		PendingMessages:  make(map[string][]model.Message),
+		PendingExchanges: map[string]*ExchangeState{},
 	}
 
 	decoder := json.NewDecoder(file)
@@ -130,6 +137,30 @@ func (f *FileWAL) Load() (RecoveredState, error) {
 			)
 		case model.QueueDeleted:
 			delete(state.PendingMessages, record.Queue)
+		case model.QueueBinded:
+			state.PendingExchanges[record.Exchange].Bindings = append(
+				state.PendingExchanges[record.Exchange].Bindings, model.Binding{
+					QueueName:  record.Queue,
+					BindingKey: record.BindingKey,
+				},
+			)
+		case model.QueueUnbinded:
+			state.PendingExchanges[record.Exchange].Bindings = slices.DeleteFunc(
+				state.PendingExchanges[record.Exchange].Bindings,
+				func(b model.Binding) bool {
+					if record.BindingKey != "" {
+						return b.BindingKey == record.BindingKey && b.QueueName == record.Queue
+					}
+					return b.QueueName == record.Queue
+				},
+			)
+		case model.ExchangeCreated:
+			state.PendingExchanges[record.Exchange] = &ExchangeState{
+				ExchangeType: record.ExchangeType,
+				Bindings:     nil,
+			}
+		case model.ExchangeDeleted:
+			delete(state.PendingExchanges, record.Exchange)
 		}
 	}
 

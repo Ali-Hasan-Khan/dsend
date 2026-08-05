@@ -3,7 +3,8 @@ package model
 import "time"
 
 const (
-	DefaultQueueName = "default"
+	DefaultQueueName    = "default"
+	DefaultExchangeName = "default"
 )
 
 type Message struct {

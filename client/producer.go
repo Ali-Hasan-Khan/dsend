@@ -39,7 +39,7 @@ func (c *Producer) do(req protocol.Request) (*protocol.Response, error) {
 	return &resp, nil
 }
 
-func (c *Producer) Publish(ctx context.Context, queueName string, payload string) error {
+func (c *Producer) Publish(ctx context.Context, exchangeName, routingKey, payload string) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -47,9 +47,10 @@ func (c *Producer) Publish(ctx context.Context, queueName string, payload string
 	}
 
 	req := protocol.Request{
-		Type:  protocol.PublishRequest,
-		Queue: queueName,
-		Message: model.Message{
+		Type:       protocol.PublishRequest,
+		Exchange:   exchangeName,
+		RoutingKey: routingKey,
+		Payload: model.Message{
 			Payload: payload,
 		},
 	}
@@ -221,4 +222,153 @@ func (c *Producer) ListQueues(ctx context.Context) ([]string, error) {
 		queues = append(queues, queue.Name)
 	}
 	return queues, nil
+}
+
+func (c *Producer) BindQueue(ctx context.Context, exchangeName, queueName, bindingKey string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	req := protocol.Request{
+		Type:       protocol.BindQueueRequest,
+		Exchange:   exchangeName,
+		Queue:      queueName,
+		BindingKey: bindingKey,
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return err
+		}
+	}
+
+	if !resp.Success {
+		return errors.New(resp.Error)
+	}
+	return nil
+}
+
+func (c *Producer) UnbindQueue(ctx context.Context, exchangeName, queueName, bindingKey string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	req := protocol.Request{
+		Type:       protocol.UnbindQueueRequest,
+		Exchange:   exchangeName,
+		Queue:      queueName,
+		BindingKey: bindingKey,
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return err
+		}
+	}
+
+	if !resp.Success {
+		return errors.New(resp.Error)
+	}
+	return nil
+}
+
+func (c *Producer) CreateExchange(ctx context.Context, exchangeName string, exchangeType string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	req := protocol.Request{
+		Type:         protocol.CreateExchangeRequest,
+		Exchange:     exchangeName,
+		ExchangeType: exchangeType,
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return err
+		}
+	}
+
+	if !resp.Success {
+		return errors.New(resp.Error)
+	}
+	return nil
+}
+
+func (c *Producer) DeleteExchange(ctx context.Context, exchangeName string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	req := protocol.Request{
+		Type:     protocol.DeleteExchangeRequest,
+		Exchange: exchangeName,
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return err
+		}
+	}
+
+	if !resp.Success {
+		return errors.New(resp.Error)
+	}
+	return nil
+}
+
+func (c *Producer) ListExchanges(ctx context.Context) ([]string, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	req := protocol.Request{
+		Type: protocol.ListExchangesRequest,
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+			return nil, err
+		}
+	}
+
+	if !resp.Success {
+		return nil, errors.New(resp.Error)
+	}
+
+	exchanges := make([]string, 0, len(resp.Exchanges))
+	for _, exchange := range resp.Exchanges {
+		exchanges = append(exchanges, exchange)
+	}
+	return exchanges, nil
 }

@@ -53,7 +53,7 @@ func (s *Server) handleConnection(conn net.Conn, b engine.Broker) {
 
 		switch req.Type {
 		case protocol.PublishRequest:
-			err := b.Publish(req.Queue, req.Message)
+			err := b.Publish(req.Exchange, req.RoutingKey, req.Payload)
 			mu.Lock()
 			encoder.Encode(protocol.Response{
 				Success: err == nil,
@@ -175,6 +175,46 @@ func (s *Server) handleConnection(conn net.Conn, b engine.Broker) {
 			encoder.Encode(protocol.Response{
 				Success: true,
 				Queues:  queues,
+			})
+			mu.Unlock()
+		case protocol.BindQueueRequest:
+			err := b.BindQueue(req.Exchange, req.Queue, req.BindingKey)
+			mu.Lock()
+			encoder.Encode(protocol.Response{
+				Success: err == nil,
+				Error:   errorString(err),
+			})
+			mu.Unlock()
+		case protocol.UnbindQueueRequest:
+			err := b.UnbindQueue(req.Exchange, req.Queue, req.BindingKey)
+			mu.Lock()
+			encoder.Encode(protocol.Response{
+				Success: err == nil,
+				Error:   errorString(err),
+			})
+			mu.Unlock()
+		case protocol.CreateExchangeRequest:
+			err := b.CreateExchange(req.Exchange, req.ExchangeType)
+			mu.Lock()
+			encoder.Encode(protocol.Response{
+				Success: err == nil,
+				Error:   errorString(err),
+			})
+			mu.Unlock()
+		case protocol.DeleteExchangeRequest:
+			err := b.DeleteExchange(req.Exchange)
+			mu.Lock()
+			encoder.Encode(protocol.Response{
+				Success: err == nil,
+				Error:   errorString(err),
+			})
+			mu.Unlock()
+		case protocol.ListExchangesRequest:
+			exchanges := b.ListExchanges()
+			mu.Lock()
+			encoder.Encode(protocol.Response{
+				Success:   true,
+				Exchanges: exchanges,
 			})
 			mu.Unlock()
 		default:

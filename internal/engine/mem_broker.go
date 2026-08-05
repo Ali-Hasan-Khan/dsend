@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	ex "github.com/Ali-Hasan-Khan/dsend/internal/exchange"
 	"github.com/Ali-Hasan-Khan/dsend/internal/inflight"
 	"github.com/Ali-Hasan-Khan/dsend/internal/model"
 	"github.com/Ali-Hasan-Khan/dsend/internal/queue"
@@ -16,12 +17,19 @@ import (
 )
 
 var (
-	ErrQueueExists     = errors.New("queue already exists")
-	ErrQueueNotEmpty   = errors.New("queue is not empty")
-	ErrQueueNotFound   = errors.New("queue does not exist")
-	ErrInvalidQueue    = errors.New("queue name is invalid")
-	ErrBrokerClosed    = errors.New("broker closed")
-	ErrInvalidAckToken = errors.New("invalid ack token")
+	ErrQueueExists         = errors.New("queue already exists")
+	ErrQueueNotEmpty       = errors.New("queue is not empty")
+	ErrQueueNotFound       = errors.New("queue does not exist")
+	ErrInvalidQueue        = errors.New("queue name is invalid")
+	ErrBrokerClosed        = errors.New("broker closed")
+	ErrInvalidAckToken     = errors.New("invalid ack token")
+	ErrExchangeNotFound    = errors.New("exchange does not exist")
+	ErrInvalidExchange     = errors.New("exchange is invalid")
+	ErrInvalidExchangeType = errors.New("exchange type is invalid")
+	ErrDefaultExchange     = errors.New("default exchange name is reserved")
+	ErrExchangeExists      = errors.New("exchange already exists")
+	ErrExchangeNotEmpty    = errors.New("exchange has existing bindings")
+	ErrNoRoute             = errors.New("no route found")
 )
 
 type InMemoryBroker struct {
@@ -34,6 +42,7 @@ type InMemoryBroker struct {
 
 	queues      map[string]*QueueRuntime
 	tokenOwners map[string]*QueueRuntime
+	exchanges   map[string]ex.Exchange
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -46,11 +55,15 @@ func NewInMemoryBroker(
 	queues map[string]*QueueRuntime,
 	tokenOwners map[string]*QueueRuntime,
 ) *InMemoryBroker {
+	exch := make(map[string]ex.Exchange)
+	exch[model.DefaultExchangeName] = ex.NewDirectExchange(model.DefaultExchangeName)
+
 	broker := &InMemoryBroker{
 		cfg:         cfg,
 		wal:         wal,
 		queues:      queues,
 		tokenOwners: tokenOwners,
+		exchanges:   exch,
 	}
 
 	return broker
@@ -164,7 +177,19 @@ func (b *InMemoryBroker) DeleteQueue(name string) error {
 	}
 
 	delete(b.queues, name)
+	for _, exchange := range b.exchanges {
+		err := exchange.Unbind("", name)
+		if err != nil {
+			if errors.Is(err, ex.ErrBindingNotExist) {
+				continue
+			} else {
+				b.mu.Unlock()
+				return err
+			}
+		}
+	}
 	b.mu.Unlock()
+
 	runtime.Shutdown()
 
 	b.tokenMu.Lock()
@@ -191,6 +216,64 @@ func (b *InMemoryBroker) ListQueues() []string {
 	return names
 }
 
+func (b *InMemoryBroker) BindQueue(exchangeName string, queueName string, bindingKey string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	exchange, exists := b.exchanges[exchangeName]
+	if !exists {
+		return ErrExchangeNotFound
+	}
+
+	if _, exists := b.queues[queueName]; !exists {
+		return ErrQueueNotFound
+	}
+
+	if err := exchange.Bind(bindingKey, queueName); err != nil {
+		return err
+	}
+
+	if err := b.wal.Append(model.Record{
+		Type:       model.QueueBinded,
+		Exchange:   exchangeName,
+		Queue:      queueName,
+		BindingKey: bindingKey,
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (b *InMemoryBroker) UnbindQueue(exchangeName, queueName, bindingKey string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	exchange, exists := b.exchanges[exchangeName]
+	if !exists {
+		return ErrExchangeNotFound
+	}
+
+	if _, exists := b.queues[queueName]; !exists {
+		return ErrQueueNotFound
+	}
+
+	if err := exchange.Unbind(bindingKey, queueName); err != nil {
+		return err
+	}
+
+	if err := b.wal.Append(model.Record{
+		Type:       model.QueueUnbinded,
+		Exchange:   exchangeName,
+		Queue:      queueName,
+		BindingKey: bindingKey,
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (b *InMemoryBroker) queue(name string) (*QueueRuntime, error) {
 	if name == "" {
 		name = model.DefaultQueueName
@@ -211,13 +294,32 @@ func (b *InMemoryBroker) queue(name string) (*QueueRuntime, error) {
 	return runtime, nil
 }
 
-func (b *InMemoryBroker) Publish(queueName string, message model.Message) error {
-	runtime, err := b.queue(queueName)
-	if err != nil {
-		return err
+func (b *InMemoryBroker) Publish(exchangeName, routingKey string, payload model.Message) error {
+	b.mu.Lock()
+	exchange, ok := b.exchanges[exchangeName]
+	if !ok {
+		b.mu.Unlock()
+		return ErrExchangeNotFound
+	}
+	queueNames := exchange.Route(routingKey)
+	b.mu.Unlock()
+
+	if len(queueNames) == 0 {
+		return ErrNoRoute
 	}
 
-	return runtime.Publish(message)
+	for _, queueName := range queueNames {
+		runtime, err := b.queue(queueName)
+		if err != nil {
+			return err
+		}
+
+		if err := runtime.Publish(payload); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (b *InMemoryBroker) Subscribe(
@@ -338,4 +440,104 @@ func (b *InMemoryBroker) QueueMetrics(queueName string) (model.Metric, error) {
 	}
 
 	return runtime.Metrics(), nil
+}
+
+func validateExchangeName(name string) error {
+	if name == "" || len(name) > 255 {
+		return ErrInvalidExchange
+	}
+	if name == model.DefaultExchangeName {
+		return ErrDefaultExchange
+	}
+	return nil
+}
+
+func validateExchangeType(name string) (model.ExchangeType, error) {
+	if len(name) > 255 {
+		return "", ErrInvalidExchangeType
+	}
+	if name == "" {
+		return model.DirectExchange, ErrInvalidExchangeType
+	}
+
+	switch name {
+	case string(model.FanOutExchange):
+		return model.FanOutExchange, nil
+	case string(model.TopicExchange):
+		return model.TopicExchange, nil
+	case string(model.DirectExchange):
+		return model.DirectExchange, nil
+	}
+	return "", ErrInvalidExchangeType
+}
+
+func (b *InMemoryBroker) CreateExchange(exchangeName string, exchangeType string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if err := validateExchangeName(exchangeName); err != nil {
+		return err
+	}
+
+	validatedExchangeType, err := validateExchangeType(exchangeType)
+	if err != nil {
+		return err
+	}
+
+	if _, ok := b.exchanges[exchangeName]; ok {
+		return ErrExchangeExists
+	}
+
+	if err := b.wal.Append(model.Record{
+		Type:         model.ExchangeCreated,
+		Exchange:     exchangeName,
+		ExchangeType: exchangeType,
+	}); err != nil {
+		return err
+	}
+
+	b.exchanges[exchangeName] = ex.NewExchangeFactory(exchangeName, validatedExchangeType)
+
+	return nil
+}
+
+func (b *InMemoryBroker) DeleteExchange(exchangeName string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if err := validateExchangeName(exchangeName); err != nil {
+		return err
+	}
+
+	exchange, ok := b.exchanges[exchangeName]
+	if !ok {
+		return ErrExchangeNotFound
+	}
+
+	if len(exchange.ListBindings()) > 0 {
+		return ErrExchangeNotEmpty
+	}
+
+	if err := b.wal.Append(model.Record{
+		Type:     model.ExchangeDeleted,
+		Exchange: exchangeName,
+	}); err != nil {
+		return err
+	}
+	delete(b.exchanges, exchangeName)
+
+	return nil
+}
+
+func (b *InMemoryBroker) ListExchanges() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	exchanges := make([]string, 0, len(b.exchanges))
+	for name := range b.exchanges {
+		exchanges = append(exchanges, name)
+	}
+	slices.Sort(exchanges)
+
+	return exchanges
 }

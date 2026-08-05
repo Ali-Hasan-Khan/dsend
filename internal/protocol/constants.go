@@ -13,4 +13,12 @@ const (
 	CreateQueueRequest = "create_queue"
 	DeleteQueueRequest = "delete_queue"
 	ListQueuesRequest  = "list_queues"
+	BindQueueRequest   = "bind_queue"
+	UnbindQueueRequest = "unbind_queue"
+)
+
+const (
+	CreateExchangeRequest = "create_exchange"
+	DeleteExchangeRequest = "delete_exchange"
+	ListExchangesRequest  = "list_exchanges"
 )
