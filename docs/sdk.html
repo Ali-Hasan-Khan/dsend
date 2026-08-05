@@ -45,6 +45,9 @@
       <div class="docs-group-label">Queues</div>
       <a href="#queues">Managing queues</a>
 
+      <div class="docs-group-label">Exchanges</div>
+      <a href="#exchanges">Exchanges &amp; routing</a>
+
       <div class="docs-group-label">Observability</div>
       <a href="#observability">Metrics</a>
 
@@ -60,7 +63,7 @@
     <h1 class="doc-title">Client SDK</h1>
     <p class="doc-subtitle">
       A single Go package for everything DSend does: publish, consume, acknowledge,
-      manage queues, and read broker metrics.
+      manage queues and exchanges, and read broker metrics.
     </p>
 
     <!-- ===================== Overview ===================== -->
@@ -71,9 +74,14 @@
         It exposes two clients that mirror the broker's two roles:
       </p>
       <ul>
-        <li><code class="inline-code">Producer</code> — publishes messages and manages queues.</li>
+        <li><code class="inline-code">Producer</code> — publishes messages, manages queues, and manages exchanges and bindings.</li>
         <li><code class="inline-code">Consumer</code> — subscribes to a queue, receives deliveries, and acknowledges them.</li>
       </ul>
+      <p>
+        Publishing routes a message through an <em>exchange</em> to every bound queue whose binding
+        key matches the publish's routing key; consuming subscribes to a queue by name. See
+        <a href="#exchanges" style="text-decoration:underline">Exchanges &amp; routing</a>.
+      </p>
       <p>
         Each client holds a single persistent TCP connection to the broker and speaks the JSON
         wire protocol directly. No HTTP, no auto-reconnect, no magic — just synchronous calls and
@@ -105,6 +113,8 @@
       </div>
 
       <h3>2. Publish</h3>
+      <p>Create the queue, bind it to an exchange, then publish with a routing key. See
+        <a href="#exchanges" style="text-decoration:underline">Exchanges &amp; routing</a>.</p>
       <div class="code-block">
         <div class="code-block-head">
           <span class="code-block-name">main.go</span>
@@ -130,7 +140,12 @@ func main() {
 		panic(err)
 	}
 
-	if err := p.Publish(context.Background(), "orders", "order-1042 created"); err != nil {
+	// bind "orders" to the default exchange under routing key "orders"
+	if err := p.BindQueue(context.Background(), "default", "orders", "orders"); err != nil {
+		panic(err)
+	}
+
+	if err := p.Publish(context.Background(), "default", "orders", "order-1042 created"); err != nil {
 		panic(err)
 	}
 	fmt.Println("published")
@@ -208,8 +223,8 @@ func main() {
         </thead>
         <tbody>
           <tr>
-            <td><code>Publish(ctx, queueName, payload)</code></td>
-            <td>Appends a message to the named queue. Publishes to the <code>default</code> queue when <code>queueName</code> is empty.</td>
+            <td><code>Publish(ctx, exchangeName, routingKey, payload)</code></td>
+            <td>Routes a message through <code>exchangeName</code> to every bound queue whose binding matches <code>routingKey</code>. Returns <code>no route found</code> when nothing matches.</td>
           </tr>
           <tr>
             <td><code>CreateQueue(ctx, name)</code></td>
@@ -217,11 +232,31 @@ func main() {
           </tr>
           <tr>
             <td><code>DeleteQueue(ctx, name)</code></td>
-            <td>Deletes a named queue.</td>
+            <td>Deletes a named queue and its bindings.</td>
           </tr>
           <tr>
             <td><code>ListQueues(ctx) ([]string, error)</code></td>
             <td>Returns the names of all queues on the broker.</td>
+          </tr>
+          <tr>
+            <td><code>CreateExchange(ctx, name, exchangeType)</code></td>
+            <td>Creates a named exchange. <code>exchangeType</code> is <code>direct</code>, <code>fanout</code>, or <code>topic</code>.</td>
+          </tr>
+          <tr>
+            <td><code>DeleteExchange(ctx, name)</code></td>
+            <td>Deletes an exchange. Fails while it still has bindings.</td>
+          </tr>
+          <tr>
+            <td><code>ListExchanges(ctx) ([]string, error)</code></td>
+            <td>Returns the names of all exchanges on the broker.</td>
+          </tr>
+          <tr>
+            <td><code>BindQueue(ctx, exchangeName, queueName, bindingKey)</code></td>
+            <td>Routes messages whose routing key matches <code>bindingKey</code> to <code>queueName</code>.</td>
+          </tr>
+          <tr>
+            <td><code>UnbindQueue(ctx, exchangeName, queueName, bindingKey)</code></td>
+            <td>Removes a binding. Publishing with that key then returns <code>no route found</code>.</td>
           </tr>
           <tr>
             <td><code>Metrics(ctx) (*BrokerMetrics, error)</code></td>
@@ -246,10 +281,11 @@ func main() {
       </p>
       <div class="callout">
         <div>
-          <strong>Create queues before publishing.</strong> Only the <code class="inline-code">default</code>
-          queue is auto-created at broker startup. Publishing or subscribing to a queue that doesn't exist
-          returns <code class="inline-code">queue does not exist</code>. Use
-          <code class="inline-code">CreateQueue</code> first (see below).
+          <strong>Bind queues before publishing.</strong> Only the <code class="inline-code">default</code>
+          exchange is pre-bound to the <code class="inline-code">default</code> queue at broker startup.
+          A publish whose routing key matches no binding returns
+          <code class="inline-code">no route found</code>. Create the queue and
+          <code class="inline-code">BindQueue</code> it to an exchange before publishing to it.
         </div>
       </div>
       <div class="code-block">
@@ -260,14 +296,17 @@ func main() {
 <pre><code>ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 defer cancel()
 
-// Named queue — create it first, then publish.
+// Named queue — create it, bind it, then publish.
 if err := p.CreateQueue(ctx, "emails"); err != nil {
 	panic(err)
 }
-err := p.Publish(ctx, "emails", `{"to":"ada@example.com","subject":"hi"}`)
+if err := p.BindQueue(ctx, "default", "emails", "emails"); err != nil {
+	panic(err)
+}
+err := p.Publish(ctx, "default", "emails", `{"to":"ada@example.com","subject":"hi"}`)
 
-// Default queue — exists at startup, no name required.
-err = p.Publish(ctx, "", "hello, world")</code></pre>
+// Default queue — pre-bound to the default exchange at startup.
+err = p.Publish(ctx, "default", "default", "hello, world")</code></pre>
       </div>
       <div class="callout">
         <div>
@@ -382,13 +421,15 @@ if err := p.DeleteQueue(ctx, "orders"); err != nil {
       <p>
         A queue is an isolated, fixed-capacity in-memory ring buffer with its own consumers, in-flight
         messages, DLQ, and metrics. The <code class="inline-code">default</code> queue is created at broker
-        startup; every other queue must be created explicitly before it can be published to or consumed from.
+        startup and pre-bound to the default exchange; every other queue must be created and bound to an
+        exchange before it can receive messages.
       </p>
       <ul>
-        <li><strong>Auto-created</strong> — the <code class="inline-code">default</code> queue exists as soon as the broker starts.</li>
+        <li><strong>Auto-created</strong> — the <code class="inline-code">default</code> queue exists as soon as the broker starts, bound to the <code class="inline-code">default</code> exchange.</li>
         <li><strong>Explicit creation</strong> — <code class="inline-code">CreateQueue</code> or <code class="inline-code">dsend queue create</code> for named queues.</li>
+        <li><strong>Binding</strong> — a queue only receives messages routed to it by an exchange binding. See <a href="#exchanges" style="text-decoration:underline">Exchanges &amp; routing</a>.</li>
         <li><strong>Capacity</strong> — 20 messages per queue by default (see <a href="#semantics" style="text-decoration:underline">configuration</a>).</li>
-        <li><strong>Deletion</strong> — <code class="inline-code">DeleteQueue</code> removes the queue from the broker.</li>
+        <li><strong>Deletion</strong> — <code class="inline-code">DeleteQueue</code> removes the queue and its bindings from the broker.</li>
       </ul>
       <div class="code-block terminal">
         <div class="code-block-head">
@@ -398,11 +439,135 @@ if err := p.DeleteQueue(ctx, "orders"); err != nil {
 <pre><code><span class="prompt">$</span> ./dsend queue create orders
 <span class="tok-str">Queue created successfully</span>
 
+<span class="prompt">$</span> ./dsend queue bind default orders orders
+<span class="tok-str">Queue bounded successfully</span>
+
 <span class="prompt">$</span> ./dsend queue list
 <span class="tok-str">Queues: [default orders]</span>
 
 <span class="prompt">$</span> ./dsend queue delete orders
 <span class="tok-str">Queue deleted successfully</span></code></pre>
+      </div>
+    </section>
+
+    <!-- ===================== Exchanges ===================== -->
+    <section id="exchanges">
+      <h2>Exchanges &amp; routing</h2>
+      <p>
+        A queue never receives a message directly. Producers publish to an <em>exchange</em>, and the
+        exchange routes the message to every queue bound to it whose binding key matches the publish's
+        routing key.
+      </p>
+
+      <h3>Exchange types</h3>
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Routing rule</th><th>Best for</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>direct</code></td>
+            <td>Routing key must exactly match the binding key.</td>
+            <td>One-to-one task routing — a key per queue.</td>
+          </tr>
+          <tr>
+            <td><code>fanout</code></td>
+            <td>Every bound queue receives every message; the routing key is ignored.</td>
+            <td>Broadcasts and event fan-out.</td>
+          </tr>
+          <tr>
+            <td><code>topic</code></td>
+            <td>Binding keys support <code>*</code> (one dot-separated segment) and <code>#</code> (zero or more segments).</td>
+            <td>Pattern-based routing across event namespaces.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Default exchange</h3>
+      <p>
+        The broker auto-creates a <code class="inline-code">default</code> exchange of type
+        <code class="inline-code">direct</code> at startup and pre-binds the
+        <code class="inline-code">default</code> queue to it with binding key
+        <code class="inline-code">default</code>. The default exchange is reserved: it can't be created
+        again or deleted.
+      </p>
+
+      <h3>Binding keys</h3>
+      <p>
+        A binding key is non-empty, at most 255 characters, and dot-separated into segments. Each
+        segment is letters, digits, <code class="inline-code">_</code>, or
+        <code class="inline-code">-</code>. On topic exchanges, <code class="inline-code">*</code>
+        matches a single segment and <code class="inline-code">#</code> matches zero or more but only as
+        the final segment. Invalid keys (empty, empty segments, or a misplaced
+        <code class="inline-code">#</code>) are rejected with
+        <code class="inline-code">binding key is invalid</code>.
+      </p>
+      <div class="code-block">
+        <div class="code-block-head">
+          <span class="code-block-name">exchanges.go</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code>// a topic exchange for event namespaces
+if err := p.CreateExchange(ctx, "events", "topic"); err != nil {
+	panic(err)
+}
+
+if err := p.CreateQueue(ctx, "orders"); err != nil {
+	panic(err)
+}
+if err := p.CreateQueue(ctx, "audit"); err != nil {
+	panic(err)
+}
+
+// "orders.*" routes order events to the orders queue;
+// "events.#" catches every event for the audit queue.
+if err := p.BindQueue(ctx, "events", "orders", "orders.*"); err != nil {
+	panic(err)
+}
+if err := p.BindQueue(ctx, "events", "audit", "events.#"); err != nil {
+	panic(err)
+}
+
+if err := p.Publish(ctx, "events", "orders.created", "order-1042 created"); err != nil {
+	panic(err)
+}
+if err := p.Publish(ctx, "events", "orders.shipped", "order-1042 shipped"); err != nil {
+	panic(err)
+}</code></pre>
+      </div>
+      <div class="callout">
+        <div>
+          <strong>No route is an error.</strong> Publishing when no binding matches returns
+          <code class="inline-code">no route found</code>. After
+          <code class="inline-code">UnbindQueue</code>, publishes for that key fail instead of silently
+          disappearing.
+        </div>
+      </div>
+      <div class="callout">
+        <div>
+          <strong>Deleting exchanges.</strong> <code class="inline-code">DeleteExchange</code> refuses to
+          remove an exchange that still has bindings. Unbind or delete its bound queues first.
+        </div>
+      </div>
+      <div class="code-block terminal">
+        <div class="code-block-head">
+          <span class="code-block-name">cli</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code><span class="prompt">$</span> ./dsend exchange create events topic
+<span class="tok-str">Exchange created successfully</span>
+
+<span class="prompt">$</span> ./dsend queue create orders
+<span class="tok-str">Queue created successfully</span>
+
+<span class="prompt">$</span> ./dsend queue bind events orders "orders.*"
+<span class="tok-str">Queue bounded successfully</span>
+
+<span class="prompt">$</span> ./dsend publish --exchange events "orders.created" "order-1042 created"
+<span class="tok-str">Message Sent successfully</span>
+
+<span class="prompt">$</span> ./dsend exchange list
+<span class="tok-str">Exchanges: [default events]</span></code></pre>
       </div>
     </section>
 
@@ -496,12 +661,24 @@ fmt.Println(q.DlqCount)</code></pre>
             <td>Starts the broker on <code>127.0.0.1:8080</code> with the WAL at <code>./data/wal.log</code>.</td>
           </tr>
           <tr>
-            <td><code>dsend publish [--queue &lt;name&gt;] "&lt;message&gt;"</code></td>
-            <td>Publishes a message. Defaults to the <code>default</code> queue.</td>
+            <td><code>dsend publish [--exchange &lt;name&gt;] &lt;routingKey&gt; "&lt;message&gt;"</code></td>
+            <td>Publishes a message through the named exchange under the given routing key. Defaults to the <code>default</code> exchange.</td>
           </tr>
           <tr>
             <td><code>dsend subscribe [--queue &lt;name&gt;]</code></td>
             <td>Subscribes, receives messages, and acks each one. Ctrl-C to stop.</td>
+          </tr>
+          <tr>
+            <td><code>dsend exchange create &lt;name&gt; &lt;type&gt;</code></td>
+            <td>Creates an exchange (<code>direct</code>, <code>fanout</code>, or <code>topic</code>).</td>
+          </tr>
+          <tr>
+            <td><code>dsend exchange delete &lt;name&gt;</code></td>
+            <td>Deletes an exchange that has no bindings.</td>
+          </tr>
+          <tr>
+            <td><code>dsend exchange list</code></td>
+            <td>Lists all exchange names.</td>
           </tr>
           <tr>
             <td><code>dsend metrics [--queue &lt;name&gt;]</code></td>
@@ -518,6 +695,14 @@ fmt.Println(q.DlqCount)</code></pre>
           <tr>
             <td><code>dsend queue list</code></td>
             <td>Lists all queue names.</td>
+          </tr>
+          <tr>
+            <td><code>dsend queue bind &lt;exchange&gt; &lt;queue&gt; &lt;bindingKey&gt;</code></td>
+            <td>Routes matching messages from the exchange to the queue.</td>
+          </tr>
+          <tr>
+            <td><code>dsend queue unbind &lt;exchange&gt; &lt;queue&gt; &lt;bindingKey&gt;</code></td>
+            <td>Removes a binding.</td>
           </tr>
         </tbody>
       </table>
@@ -546,7 +731,7 @@ fmt.Println(q.DlqCount)</code></pre>
           <tr><th>Type</th><th>Sent by</th><th>Purpose</th></tr>
         </thead>
         <tbody>
-          <tr><td><code>publish</code></td><td>Producer</td><td>Append a message to a queue.</td></tr>
+          <tr><td><code>publish</code></td><td>Producer</td><td>Route a message through an exchange to bound queues.</td></tr>
           <tr><td><code>subscribe</code></td><td>Consumer</td><td>Register a consumer session for a queue.</td></tr>
           <tr><td><code>ack</code></td><td>Consumer</td><td>Acknowledge a delivery by token.</td></tr>
           <tr><td><code>unsubscribe</code></td><td>Consumer</td><td>Leave the queue's round-robin rotation.</td></tr>
@@ -554,6 +739,11 @@ fmt.Println(q.DlqCount)</code></pre>
           <tr><td><code>create_queue</code></td><td>Producer</td><td>Create a named queue.</td></tr>
           <tr><td><code>delete_queue</code></td><td>Producer</td><td>Delete a named queue.</td></tr>
           <tr><td><code>list_queues</code></td><td>Producer</td><td>List all queue names.</td></tr>
+          <tr><td><code>bind_queue</code></td><td>Producer</td><td>Bind a queue to an exchange with a binding key.</td></tr>
+          <tr><td><code>unbind_queue</code></td><td>Producer</td><td>Remove a binding.</td></tr>
+          <tr><td><code>create_exchange</code></td><td>Producer</td><td>Create an exchange with a type.</td></tr>
+          <tr><td><code>delete_exchange</code></td><td>Producer</td><td>Delete an exchange without bindings.</td></tr>
+          <tr><td><code>list_exchanges</code></td><td>Producer</td><td>List all exchange names.</td></tr>
         </tbody>
       </table>
 
@@ -563,7 +753,14 @@ fmt.Println(q.DlqCount)</code></pre>
           <span class="code-block-name">client → broker</span>
           <button class="code-copy" data-copy>Copy</button>
         </div>
-<pre><code>{"type":"publish","queue":"orders","message":{"payload":"order-1042 created"}}</code></pre>
+<pre><code>{"type":"publish","exchange":"default","routing_key":"orders","message":{"payload":"order-1042 created"}}</code></pre>
+      </div>
+      <div class="code-block">
+        <div class="code-block-head">
+          <span class="code-block-name">client → broker (bind)</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code>{"type":"bind_queue","exchange":"default","queue":"orders","binding_key":"orders"}</code></pre>
       </div>
       <div class="code-block">
         <div class="code-block-head">
@@ -643,9 +840,9 @@ fmt.Println(q.DlqCount)</code></pre>
 
       <h3>Persistence &amp; recovery</h3>
       <p>
-        The broker appends every state change — publish, ack, requeue, dead-letter — to a
-        write-ahead log. On restart it replays the WAL and rebuilds queues, in-flight state, and session
-        ownership.
+        The broker appends every state change — publish, ack, requeue, dead-letter, and exchange and
+        binding changes — to a write-ahead log. On restart it replays the WAL and rebuilds queues,
+        exchanges, bindings, in-flight state, and session ownership.
       </p>
     </section>
 

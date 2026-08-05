@@ -20,6 +20,8 @@ The project focuses on correctness, simplicity, and learning while providing a s
 ### Broker
 
 - Multiple named in-memory ring-buffer queues
+- Exchanges with routing (direct, fanout, topic)
+- Queue-to-exchange bindings and binding-key matching
 - Multi-producer / multi-consumer architecture
 - Queue-scoped consumers, round-robin delivery, DLQs, retries, and metrics
 - Push-based message delivery
@@ -163,13 +165,19 @@ The broker listens on `127.0.0.1:8080` and persists to `./data/wal.log`.
 DSend supports multiple isolated named queues. Each queue has its own capacity,
 consumers, delivery scheduling, in-flight messages, dead-letter queue, and
 metrics. Only the `default` queue exists at startup — create named queues before
-publishing to them. Publishing or consuming without a queue name uses the
-`default` queue.
+publishing to them. Messages are published to an exchange and routed to bound
+queues by routing key (see [Exchanges](#exchanges) below).
 
 ## Creating Queues
 
 ```bash
 dsend queue create orders
+```
+
+Bind a queue to an exchange with a binding key so it can receive messages:
+
+```bash
+dsend queue bind default orders orders
 ```
 
 List and delete queues:
@@ -179,19 +187,44 @@ dsend queue list
 dsend queue delete orders
 ```
 
+## Exchanges
+
+An exchange routes a published message to every bound queue whose binding key
+matches the publish's routing key. Three exchange types are supported:
+
+| Type     | Routing rule                                                            |
+| -------- | ----------------------------------------------------------------------- |
+| `direct` | Routing key must exactly match the binding key.                         |
+| `fanout` | Every bound queue receives every message; the routing key is ignored.   |
+| `topic`  | Binding keys support `*` (one segment) and `#` (zero or more segments). |
+
+The `default` exchange (type `direct`) is created at startup and pre-bound to
+the `default` queue under the binding key `default`. It cannot be created again
+or deleted.
+
+```bash
+dsend exchange create events topic
+dsend exchange list
+dsend exchange delete events
+```
+
 ## Publishing Messages
+
+A publish targets an exchange and carries a routing key:
 
 ### Linux / macOS
 
 ```bash
-./dsend publish --queue orders "Hello, DSend!"
+./dsend publish --exchange default orders "Hello, DSend!"
 ```
 
 ### Windows
 
 ```powershell
-.\dsend.exe publish --queue orders "Hello, DSend!"
+.\dsend.exe publish --exchange default orders "Hello, DSend!"
 ```
+
+Publishing a routing key that matches no binding returns `no route found`.
 
 ---
 
@@ -209,12 +242,13 @@ dsend queue delete orders
 .\dsend.exe subscribe --queue orders
 ```
 
-Messages are automatically acknowledged after successful processing. The
-following commands target the compatibility `default` queue when `--queue` is
-omitted (no queue creation required):
+Messages are automatically acknowledged after successful processing. Omitting
+`--queue` subscribes to the compatibility `default` queue (no queue creation
+required). To reach the default queue without creating anything, publish to the
+`default` exchange with the `default` routing key:
 
 ```text
-dsend publish "Hello, DSend!"
+dsend publish --exchange default default "Hello, DSend!"
 dsend subscribe
 ```
 
@@ -320,7 +354,7 @@ GitHub Actions is configured in [`.github/workflows`](.github/workflows):
 
 - **CI** — runs on pushes to `main` and pull requests: format check, `go vet`,
   unit tests, race detector, build, and a real broker round-trip
-  (create queue → publish → subscribe).
+  (create exchange → bind queue → publish → subscribe).
 - **Release** — pushing a version tag (`git tag v0.3.0 && git push --tags`)
   cross-compiles binaries for Linux, macOS, and Windows into `dist/`, and
   publishes a GitHub Release with the artifacts.
@@ -330,6 +364,8 @@ GitHub Actions is configured in [`.github/workflows`](.github/workflows):
 ## Current Capabilities
 
 - Multiple named, isolated queues
+- Exchanges and routing (direct, fanout, topic)
+- Queue-to-exchange bindings
 - Reliable message delivery
 - ACK-based message processing
 - Automatic retry on ACK timeout
