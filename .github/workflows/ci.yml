@@ -61,14 +61,16 @@ jobs:
       - name: Verify version metadata
         run: ./bin/dsend version
 
-      - name: Smoke test (broker round-trip)
+      - name: Smoke test (exchange round-trip)
         run: |
           ./bin/dsend server > /tmp/dsend-server.log 2>&1 &
           SERVER_PID=$!
           trap 'kill $SERVER_PID' EXIT
           sleep 2
+          ./bin/dsend exchange create events topic
           ./bin/dsend queue create orders
-          ./bin/dsend publish --queue orders "hello from CI"
+          ./bin/dsend queue bind events orders "orders.*"
+          ./bin/dsend publish --exchange events "orders.created" "hello from CI"
           output="$(timeout 15 ./bin/dsend subscribe --queue orders || true)"
           printf '%s\n' "$output"
           printf '%s\n' "$output" | grep -q "hello from CI"

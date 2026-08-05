@@ -3,6 +3,7 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -260,5 +261,167 @@ func TestLoadCorruptedWAL(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected decode error")
+	}
+}
+
+func appendRecords(t *testing.T, wal *FileWAL, records ...model.Record) {
+	t.Helper()
+
+	for _, r := range records {
+		if err := wal.Append(r); err != nil {
+			t.Fatalf("append %v: %v", r, err)
+		}
+	}
+}
+
+func TestLoadRecoversExchangesAndBindings(t *testing.T) {
+	wal, err := NewFileWAL(filepath.Join(t.TempDir(), "wal.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	appendRecords(t, wal,
+		model.Record{Type: model.ExchangeCreated, Exchange: "events", ExchangeType: "direct"},
+		model.Record{Type: model.QueueBinded, Exchange: "events", Queue: "orders", BindingKey: "orders"},
+		model.Record{Type: model.QueueBinded, Exchange: "events", Queue: "payments", BindingKey: "payments.*"},
+	)
+
+	state, err := wal.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	exchangeState, ok := state.PendingExchanges["events"]
+	if !ok {
+		t.Fatal("events exchange not recovered")
+	}
+	if exchangeState.ExchangeType != "direct" {
+		t.Fatalf("exchange type = %q, want direct", exchangeState.ExchangeType)
+	}
+
+	want := []model.Binding{
+		{QueueName: "orders", BindingKey: "orders"},
+		{QueueName: "payments", BindingKey: "payments.*"},
+	}
+	if got := exchangeState.Bindings; !reflect.DeepEqual(got, want) {
+		t.Fatalf("bindings = %v, want %v", got, want)
+	}
+}
+
+func TestLoadRemovesUnboundBinding(t *testing.T) {
+	wal, err := NewFileWAL(filepath.Join(t.TempDir(), "wal.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	appendRecords(t, wal,
+		model.Record{Type: model.ExchangeCreated, Exchange: "events", ExchangeType: "direct"},
+		model.Record{Type: model.QueueBinded, Exchange: "events", Queue: "orders", BindingKey: "orders"},
+		model.Record{Type: model.QueueBinded, Exchange: "events", Queue: "payments", BindingKey: "payments"},
+		model.Record{Type: model.QueueUnbinded, Exchange: "events", Queue: "orders", BindingKey: "orders"},
+	)
+
+	state, err := wal.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []model.Binding{{QueueName: "payments", BindingKey: "payments"}}
+	if got := state.PendingExchanges["events"].Bindings; !reflect.DeepEqual(got, want) {
+		t.Fatalf("bindings = %v, want %v", got, want)
+	}
+}
+
+func TestLoadUnbindAllForQueue(t *testing.T) {
+	wal, err := NewFileWAL(filepath.Join(t.TempDir(), "wal.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	appendRecords(t, wal,
+		model.Record{Type: model.ExchangeCreated, Exchange: "events", ExchangeType: "direct"},
+		model.Record{Type: model.QueueBinded, Exchange: "events", Queue: "orders", BindingKey: "a"},
+		model.Record{Type: model.QueueBinded, Exchange: "events", Queue: "orders", BindingKey: "b"},
+		model.Record{Type: model.QueueBinded, Exchange: "events", Queue: "payments", BindingKey: "a"},
+		model.Record{Type: model.QueueUnbinded, Exchange: "events", Queue: "orders"},
+	)
+
+	state, err := wal.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []model.Binding{{QueueName: "payments", BindingKey: "a"}}
+	if got := state.PendingExchanges["events"].Bindings; !reflect.DeepEqual(got, want) {
+		t.Fatalf("bindings = %v, want %v", got, want)
+	}
+}
+
+func TestLoadRebindAfterUnbind(t *testing.T) {
+	wal, err := NewFileWAL(filepath.Join(t.TempDir(), "wal.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	appendRecords(t, wal,
+		model.Record{Type: model.ExchangeCreated, Exchange: "events", ExchangeType: "direct"},
+		model.Record{Type: model.QueueBinded, Exchange: "events", Queue: "orders", BindingKey: "orders"},
+		model.Record{Type: model.QueueUnbinded, Exchange: "events", Queue: "orders", BindingKey: "orders"},
+		model.Record{Type: model.QueueBinded, Exchange: "events", Queue: "orders", BindingKey: "orders"},
+	)
+
+	state, err := wal.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []model.Binding{{QueueName: "orders", BindingKey: "orders"}}
+	if got := state.PendingExchanges["events"].Bindings; !reflect.DeepEqual(got, want) {
+		t.Fatalf("bindings = %v, want %v", got, want)
+	}
+}
+
+func TestLoadRemovesDeletedExchange(t *testing.T) {
+	wal, err := NewFileWAL(filepath.Join(t.TempDir(), "wal.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	appendRecords(t, wal,
+		model.Record{Type: model.ExchangeCreated, Exchange: "events", ExchangeType: "direct"},
+		model.Record{Type: model.ExchangeDeleted, Exchange: "events"},
+	)
+
+	state, err := wal.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(state.PendingExchanges) != 0 {
+		t.Fatalf("expected no exchanges, got %v", state.PendingExchanges)
+	}
+}
+
+func TestLoadSkipsBindingsForUnknownExchange(t *testing.T) {
+	wal, err := NewFileWAL(filepath.Join(t.TempDir(), "wal.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The default exchange binding is appended to the WAL on every startup,
+	// but "default" never has an ExchangeCreated record. Load must skip it,
+	// not panic.
+	appendRecords(t, wal,
+		model.Record{Type: model.QueueBinded, Exchange: model.DefaultExchangeName, Queue: model.DefaultQueueName, BindingKey: model.DefaultQueueName},
+		model.Record{Type: model.QueueUnbinded, Exchange: "ghost", Queue: "orders"},
+	)
+
+	state, err := wal.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(state.PendingExchanges) != 0 {
+		t.Fatalf("expected no exchanges, got %v", state.PendingExchanges)
 	}
 }

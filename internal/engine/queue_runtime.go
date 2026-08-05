@@ -140,6 +140,7 @@ func (q *QueueRuntime) Ack(token string) error {
 	if err := q.wal.Append(model.Record{
 		Type:      model.Acknowledged,
 		Queue:     q.name,
+		Message:   message,
 		MessageID: message.ID,
 	}); err != nil {
 		return err

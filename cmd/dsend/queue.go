@@ -81,6 +81,52 @@ func runQueue(args []string) error {
 		}
 
 		fmt.Println("Queues:", queues)
+	case "bind":
+		if len(remainingArgs) < 4 {
+			return errors.New("Error: missing required <exchangeName>,<queueName>, and <bindingKey> arguments")
+		}
+
+		exchangeName := remainingArgs[1]
+		queueName := remainingArgs[2]
+		bindingKey := strings.Join(remainingArgs[3:], " ")
+		c, err := client.NewProducer("localhost:8080")
+		if err != nil {
+			return err
+		}
+		defer c.Close()
+
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		err = c.BindQueue(ctx, exchangeName, queueName, bindingKey)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println("Queue bounded successfully")
+	case "unbind":
+		if len(remainingArgs) < 4 {
+			return errors.New("Error: missing required <exchangeName>,<queueName>, and <bindingKey> arguments")
+		}
+
+		exchangeName := remainingArgs[1]
+		queueName := remainingArgs[2]
+		bindingKey := strings.Join(remainingArgs[3:], " ")
+		c, err := client.NewProducer("localhost:8080")
+		if err != nil {
+			return err
+		}
+		defer c.Close()
+
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		err = c.UnbindQueue(ctx, exchangeName, queueName, bindingKey)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println("Queue unbounded successfully")
 	default:
 		return errors.New("Error: invalid argument")
 	}

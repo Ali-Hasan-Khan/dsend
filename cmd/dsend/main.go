@@ -34,6 +34,10 @@ func main() {
 		if err := runQueue(os.Args[2:]); err != nil {
 			log.Fatal(err)
 		}
+	case "exchange":
+		if err := runExchange(os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
 	case "version":
 		fmt.Printf("dsend %s\ncommit: %s\nbuilt: %s\ngo: %s\n", Version, Commit, BuildTime, runtime.Version())
 	default:

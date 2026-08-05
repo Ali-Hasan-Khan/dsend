@@ -15,15 +15,16 @@ import (
 
 func runPublish(args []string) error {
 	publishCmd := flag.NewFlagSet("publish", flag.ExitOnError)
-	queueName := publishCmd.String("queue", "default", "target queue")
+	exchangeName := publishCmd.String("exchange", "default", "target exchange")
 	publishCmd.Parse(args)
 	remainingArgs := publishCmd.Args()
 
-	if len(remainingArgs) < 1 {
-		return errors.New("Error: missing required <message> argument")
+	if len(remainingArgs) < 2 {
+		return errors.New("Error: missing required <routingKey> and <payload> arguments")
 	}
 
-	payload := strings.Join(remainingArgs, " ")
+	routingKey := remainingArgs[0]
+	payload := strings.Join(remainingArgs[1:], " ")
 	c, err := client.NewProducer("localhost:8080")
 	if err != nil {
 		return err
@@ -33,7 +34,7 @@ func runPublish(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	err = c.Publish(ctx, *queueName, payload)
+	err = c.Publish(ctx, *exchangeName, routingKey, payload)
 	if err != nil {
 		return err
 	}
