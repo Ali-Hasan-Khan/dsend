@@ -66,12 +66,15 @@
 <span class="comment">[server] listening on 127.0.0.1:8080
 [wal]    appending to ./data/wal.log
 
-# terminal 2 — create a queue and publish a message
+# terminal 2 — create a queue, bind it to an exchange, publish
 # terminal 3 — subscribe and receive it</span>
 <span class="prompt">$</span> ./dsend queue create orders
 <span class="tok-str">Queue created successfully</span>
 
-<span class="prompt">$</span> ./dsend publish --queue orders "order-1042 created"
+<span class="prompt">$</span> ./dsend queue bind default orders orders
+<span class="tok-str">Queue bounded successfully</span>
+
+<span class="prompt">$</span> ./dsend publish --exchange default orders "order-1042 created"
 <span class="tok-str">Message Sent successfully</span>
 
 <span class="prompt">$</span> ./dsend subscribe --queue orders
@@ -86,7 +89,7 @@
       <div class="section-head center">
         <span class="eyebrow">What you get</span>
         <h2>Everything a broker needs. Nothing it doesn't.</h2>
-        <p>Six core building blocks, implemented from scratch and exposed through a small, typed Go SDK.</p>
+        <p>Seven core building blocks, implemented from scratch and exposed through a small, typed Go SDK.</p>
       </div>
 
       <div class="feature-grid">
@@ -95,7 +98,14 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/><path d="m3 18 9 5 9-5"/></svg>
           </div>
           <h3>Named queues</h3>
-          <p>Isolated in-memory ring buffers. Create named queues with the CLI or SDK, or use the default queue when none is given.</p>
+          <p>Isolated in-memory ring buffers. Create named queues with the CLI or SDK — the default queue is pre-bound to the default exchange.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </div>
+          <h3>Exchanges &amp; routing</h3>
+          <p>Direct, fanout, and topic exchanges route messages to bound queues by routing key. Bind a queue, then publish to a key.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">
@@ -152,6 +162,7 @@
             <li>Publish</li>
             <li>Metrics</li>
             <li>Queue admin</li>
+            <li>Exchange admin</li>
           </ul>
         </div>
         <div class="arch-wire"><span>TCP &middot; JSON</span></div>
@@ -159,6 +170,7 @@
           <h4><span class="dot"></span>Broker</h4>
           <p>per-queue runtime</p>
           <ul>
+            <li>exchanges</li>
             <li>ring buffer</li>
             <li>in-flight</li>
             <li>DLQ</li>
@@ -219,8 +231,13 @@ func main() {
     panic(err)
   }
 
+  // bind "orders" to the default exchange under routing key "orders"
+  if err := p.BindQueue(context.Background(), "default", "orders", "orders"); err != nil {
+    panic(err)
+  }
+
   err = p.Publish(context.Background(),
-    "orders", "order-1042 created")
+    "default", "orders", "order-1042 created")
   if err != nil {
     panic(err)
   }
@@ -274,7 +291,7 @@ func main() {
         <div class="step">
           <div class="step-num">2</div>
           <h3>Run the producer</h3>
-          <p>Open a connection, create the queue (or use <code class="inline-code">default</code>), then call <code class="inline-code">Publish</code>.</p>
+          <p>Open a connection, create the queue (or use <code class="inline-code">default</code>), bind it to the <code class="inline-code">default</code> exchange, then call <code class="inline-code">Publish</code> with a routing key.</p>
         </div>
         <div class="step">
           <div class="step-num">3</div>
