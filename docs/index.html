@@ -66,8 +66,11 @@
 <span class="comment">[server] listening on 127.0.0.1:8080
 [wal]    appending to ./data/wal.log
 
-# terminal 2 — publish a message
+# terminal 2 — create a queue and publish a message
 # terminal 3 — subscribe and receive it</span>
+<span class="prompt">$</span> ./dsend queue create orders
+<span class="tok-str">Queue created successfully</span>
+
 <span class="prompt">$</span> ./dsend publish --queue orders "order-1042 created"
 <span class="tok-str">Message Sent successfully</span>
 
@@ -92,7 +95,7 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/><path d="m3 18 9 5 9-5"/></svg>
           </div>
           <h3>Named queues</h3>
-          <p>Isolated in-memory ring buffers. Publish to any queue name, or the default queue when none is given.</p>
+          <p>Isolated in-memory ring buffers. Create named queues with the CLI or SDK, or use the default queue when none is given.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">
@@ -212,6 +215,10 @@ func main() {
   }
   defer p.Close()
 
+  if err := p.CreateQueue(context.Background(), "orders"); err != nil {
+    panic(err)
+  }
+
   err = p.Publish(context.Background(),
     "orders", "order-1042 created")
   if err != nil {
@@ -267,7 +274,7 @@ func main() {
         <div class="step">
           <div class="step-num">2</div>
           <h3>Run the producer</h3>
-          <p>Open a connection and call <code class="inline-code">Publish</code>. The message is appended to the WAL before it's queued.</p>
+          <p>Open a connection, create the queue (or use <code class="inline-code">default</code>), then call <code class="inline-code">Publish</code>.</p>
         </div>
         <div class="step">
           <div class="step-num">3</div>

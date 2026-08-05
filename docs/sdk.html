@@ -126,6 +126,10 @@ func main() {
 	}
 	defer p.Close()
 
+	if err := p.CreateQueue(context.Background(), "orders"); err != nil {
+		panic(err)
+	}
+
 	if err := p.Publish(context.Background(), "orders", "order-1042 created"); err != nil {
 		panic(err)
 	}
@@ -240,6 +244,14 @@ func main() {
         the contents. A message is written to the WAL <em>before</em> it is queued, so a crash between
         the two steps doesn't lose it.
       </p>
+      <div class="callout">
+        <div>
+          <strong>Create queues before publishing.</strong> Only the <code class="inline-code">default</code>
+          queue is auto-created at broker startup. Publishing or subscribing to a queue that doesn't exist
+          returns <code class="inline-code">queue does not exist</code>. Use
+          <code class="inline-code">CreateQueue</code> first (see below).
+        </div>
+      </div>
       <div class="code-block">
         <div class="code-block-head">
           <span class="code-block-name">publish.go</span>
@@ -248,10 +260,13 @@ func main() {
 <pre><code>ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 defer cancel()
 
-// Named queue. The queue is created implicitly on first publish.
+// Named queue — create it first, then publish.
+if err := p.CreateQueue(ctx, "emails"); err != nil {
+	panic(err)
+}
 err := p.Publish(ctx, "emails", `{"to":"ada@example.com","subject":"hi"}`)
 
-// Default queue — no name required.
+// Default queue — exists at startup, no name required.
 err = p.Publish(ctx, "", "hello, world")</code></pre>
       </div>
       <div class="callout">
@@ -366,12 +381,12 @@ if err := p.DeleteQueue(ctx, "orders"); err != nil {
       <h2>Managing queues</h2>
       <p>
         A queue is an isolated, fixed-capacity in-memory ring buffer with its own consumers, in-flight
-        messages, DLQ, and metrics. The <code class="inline-code">default</code> queue exists implicitly;
-        publishing to any other name creates the queue on first use.
+        messages, DLQ, and metrics. The <code class="inline-code">default</code> queue is created at broker
+        startup; every other queue must be created explicitly before it can be published to or consumed from.
       </p>
       <ul>
-        <li><strong>Implicit creation</strong> — publishing to <code class="inline-code">orders</code> creates it if it doesn't exist.</li>
-        <li><strong>Explicit creation</strong> — <code class="inline-code">CreateQueue</code> if you want to manage it up front.</li>
+        <li><strong>Auto-created</strong> — the <code class="inline-code">default</code> queue exists as soon as the broker starts.</li>
+        <li><strong>Explicit creation</strong> — <code class="inline-code">CreateQueue</code> or <code class="inline-code">dsend queue create</code> for named queues.</li>
         <li><strong>Capacity</strong> — 20 messages per queue by default (see <a href="#semantics" style="text-decoration:underline">configuration</a>).</li>
         <li><strong>Deletion</strong> — <code class="inline-code">DeleteQueue</code> removes the queue from the broker.</li>
       </ul>

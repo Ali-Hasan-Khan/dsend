@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Error: expected 'server', 'publish', 'subscribe', 'queue create/delete/list', or 'metrics' subcommand")
+		fmt.Println("Error: expected 'server', 'publish', 'subscribe', 'queue create/delete/list', 'metrics', or 'version' subcommand")
 		os.Exit(1)
 	}
 
@@ -33,6 +34,8 @@ func main() {
 		if err := runQueue(os.Args[2:]); err != nil {
 			log.Fatal(err)
 		}
+	case "version":
+		fmt.Printf("dsend %s\ncommit: %s\nbuilt: %s\ngo: %s\n", Version, Commit, BuildTime, runtime.Version())
 	default:
 		fmt.Printf("Unknown subcommand: %s\n", os.Args[1])
 		os.Exit(1)

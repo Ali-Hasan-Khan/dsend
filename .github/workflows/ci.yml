@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Format check
+        run: make fmt
+
+      - name: Vet
+        run: make vet
+
+      - name: Test
+        run: make test
+
+      - name: Test with race detector
+        run: make test-race
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: make build
+
+      - name: Verify version metadata
+        run: ./bin/dsend version
+
+      - name: Smoke test (broker round-trip)
+        run: |
+          ./bin/dsend server > /tmp/dsend-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID' EXIT
+          sleep 2
+          ./bin/dsend queue create orders
+          ./bin/dsend publish --queue orders "hello from CI"
+          output="$(timeout 15 ./bin/dsend subscribe --queue orders || true)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -q "hello from CI"
