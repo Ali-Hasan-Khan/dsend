@@ -1,5 +1,8 @@
 # DSend
 
+[![CI](https://github.com/Ali-Hasan-Khan/dsend/actions/workflows/ci.yml/badge.svg)](https://github.com/Ali-Hasan-Khan/dsend/actions/workflows/ci.yml)
+[![Release](https://github.com/Ali-Hasan-Khan/dsend/actions/workflows/release.yml/badge.svg)](https://github.com/Ali-Hasan-Khan/dsend/actions/workflows/release.yml)
+
 DSend is a lightweight **queue-based distributed message broker** written from scratch in **Go**. Inspired by systems like RabbitMQ, it is built to explore the core concepts behind modern message brokers, including concurrent programming, reliable message delivery, persistence, networking, and distributed systems.
 
 ---
@@ -77,7 +80,8 @@ internal/
 
 ### Prerequisites
 
-- Go 1.24 or later
+- Go 1.25 or later
+- GNU Make (optional — used by `make` targets below)
 
 Clone the repository:
 
@@ -89,6 +93,30 @@ cd dsend
 ---
 
 ## Build
+
+Build the `dsend` binary into `bin/` using the Makefile:
+
+```bash
+make build
+```
+
+The output is `bin/dsend` on Linux/macOS and `bin/dsend.exe` on Windows. The
+binary embeds the current git tag, commit, and build time:
+
+```bash
+./bin/dsend version
+```
+
+Example output:
+
+```text
+dsend v0.2.0-3-gc5245d8
+commit: c5245d8
+built: 2026-08-05T06:15:37Z
+go: go1.26.4
+```
+
+To build a single binary without Make, run:
 
 ### Linux / macOS
 
@@ -106,6 +134,14 @@ go build -o dsend.exe .\cmd\dsend
 
 ## Running the Broker
 
+Build and start the broker in one step:
+
+```bash
+make run
+```
+
+Or start an already-built binary:
+
 ### Linux / macOS
 
 ```bash
@@ -118,13 +154,30 @@ go build -o dsend.exe .\cmd\dsend
 .\dsend.exe server
 ```
 
+The broker listens on `127.0.0.1:8080` and persists to `./data/wal.log`.
+
 ---
 
 ## Named Queues
 
 DSend supports multiple isolated named queues. Each queue has its own capacity,
 consumers, delivery scheduling, in-flight messages, dead-letter queue, and
-metrics. Publishing or consuming without a queue name uses the `default` queue.
+metrics. Only the `default` queue exists at startup — create named queues before
+publishing to them. Publishing or consuming without a queue name uses the
+`default` queue.
+
+## Creating Queues
+
+```bash
+dsend queue create orders
+```
+
+List and delete queues:
+
+```bash
+dsend queue list
+dsend queue delete orders
+```
 
 ## Publishing Messages
 
@@ -158,7 +211,7 @@ metrics. Publishing or consuming without a queue name uses the `default` queue.
 
 Messages are automatically acknowledged after successful processing. The
 following commands target the compatibility `default` queue when `--queue` is
-omitted:
+omitted (no queue creation required):
 
 ```text
 dsend publish "Hello, DSend!"
@@ -200,14 +253,77 @@ RedeliveredCount: 0
 Run all tests:
 
 ```bash
-go test ./...
+make test
 ```
 
 Run the race detector:
 
 ```bash
-go test -race ./...
+make test-race
 ```
+
+Generate a coverage report (`coverage.html`):
+
+```bash
+make coverage
+```
+
+The equivalent plain Go commands are `go test ./...` and `go test -race ./...`.
+
+---
+
+## Development
+
+The Makefile wraps the common development loop. Run `make` (or `make help`) to
+list all targets:
+
+```text
+$ make
+Usage:
+  make <target>
+
+Targets:
+   Development
+    dev                 Run the full local development loop.
+    all                 Run quality checks, tests, and the build.
+   Quality
+    check-quality       Run all code quality checks.
+    lint                Run the linter (requires golangci-lint).
+    vet                 Run go vet.
+    fmt                 Fail if any Go source file is not formatted.
+    fmt-fix             Rewrite Go source files with gofmt.
+    tidy                Tidy go.mod and go.sum.
+   Test
+    test                Run all tests.
+    test-race           Run all tests with the race detector.
+    coverage            Run tests with coverage and emit an HTML report.
+   Build
+    build               Build the dsend binary into ./bin.
+    run                 Build and run the broker server.
+    release             Cross-compile release binaries into ./dist.
+   Maintenance
+    clean               Remove build and test artifacts.
+    help                Show this help.
+```
+
+Run everything — tidy, format check, vet, tests, and build:
+
+```bash
+make dev
+```
+
+---
+
+## Continuous Integration & Releases
+
+GitHub Actions is configured in [`.github/workflows`](.github/workflows):
+
+- **CI** — runs on pushes to `main` and pull requests: format check, `go vet`,
+  unit tests, race detector, build, and a real broker round-trip
+  (create queue → publish → subscribe).
+- **Release** — pushing a version tag (`git tag v0.3.0 && git push --tags`)
+  cross-compiles binaries for Linux, macOS, and Windows into `dist/`, and
+  publishes a GitHub Release with the artifacts.
 
 ---
 
