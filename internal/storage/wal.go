@@ -138,15 +138,23 @@ func (f *FileWAL) Load() (RecoveredState, error) {
 		case model.QueueDeleted:
 			delete(state.PendingMessages, record.Queue)
 		case model.QueueBinded:
-			state.PendingExchanges[record.Exchange].Bindings = append(
-				state.PendingExchanges[record.Exchange].Bindings, model.Binding{
+			exchangeState, ok := state.PendingExchanges[record.Exchange]
+			if !ok {
+				continue
+			}
+			exchangeState.Bindings = append(
+				exchangeState.Bindings, model.Binding{
 					QueueName:  record.Queue,
 					BindingKey: record.BindingKey,
 				},
 			)
 		case model.QueueUnbinded:
-			state.PendingExchanges[record.Exchange].Bindings = slices.DeleteFunc(
-				state.PendingExchanges[record.Exchange].Bindings,
+			exchangeState, ok := state.PendingExchanges[record.Exchange]
+			if !ok {
+				continue
+			}
+			exchangeState.Bindings = slices.DeleteFunc(
+				exchangeState.Bindings,
 				func(b model.Binding) bool {
 					if record.BindingKey != "" {
 						return b.BindingKey == record.BindingKey && b.QueueName == record.Queue

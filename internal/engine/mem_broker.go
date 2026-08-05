@@ -30,6 +30,7 @@ var (
 	ErrExchangeExists      = errors.New("exchange already exists")
 	ErrExchangeNotEmpty    = errors.New("exchange has existing bindings")
 	ErrNoRoute             = errors.New("no route found")
+	ErrInvalidBindingKey   = errors.New("binding key is invalid")
 )
 
 type InMemoryBroker struct {
@@ -177,7 +178,7 @@ func (b *InMemoryBroker) DeleteQueue(name string) error {
 	}
 
 	delete(b.queues, name)
-	for _, exchange := range b.exchanges {
+	for exchangeName, exchange := range b.exchanges {
 		err := exchange.Unbind("", name)
 		if err != nil {
 			if errors.Is(err, ex.ErrBindingNotExist) {
@@ -186,6 +187,15 @@ func (b *InMemoryBroker) DeleteQueue(name string) error {
 				b.mu.Unlock()
 				return err
 			}
+		}
+
+		if err := b.wal.Append(model.Record{
+			Type:     model.QueueUnbinded,
+			Exchange: exchangeName,
+			Queue:    name,
+		}); err != nil {
+			b.mu.Unlock()
+			return err
 		}
 	}
 	b.mu.Unlock()
@@ -216,7 +226,46 @@ func (b *InMemoryBroker) ListQueues() []string {
 	return names
 }
 
+func isValidBindingKeyChar(r rune) bool {
+	return (r >= 'a' && r <= 'z') ||
+		(r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9') ||
+		r == '_' || r == '-'
+}
+
+func validateBindingKey(bindingKey string) error {
+	if bindingKey == "" || len(bindingKey) > 255 {
+		return ErrInvalidBindingKey
+	}
+
+	segments := strings.Split(bindingKey, ".")
+	for i, segment := range segments {
+		if segment == "" {
+			return ErrInvalidBindingKey
+		}
+		if segment == "#" {
+			if i != len(segments)-1 {
+				return ErrInvalidBindingKey
+			}
+			continue
+		}
+		if segment == "*" {
+			continue
+		}
+		for _, r := range segment {
+			if !isValidBindingKeyChar(r) {
+				return ErrInvalidBindingKey
+			}
+		}
+	}
+	return nil
+}
+
 func (b *InMemoryBroker) BindQueue(exchangeName string, queueName string, bindingKey string) error {
+	if err := validateBindingKey(bindingKey); err != nil {
+		return err
+	}
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 

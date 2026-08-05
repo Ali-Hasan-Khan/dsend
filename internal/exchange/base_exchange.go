@@ -36,6 +36,18 @@ func (e *baseExchange) checkBindingExists(bindingKey, queueName string) bool {
 	return false
 }
 
+func (e *baseExchange) hasBinding(bindingKey, queueName string) bool {
+	for _, binding := range e.bindings {
+		if binding.QueueName != queueName {
+			continue
+		}
+		if bindingKey == "" || binding.BindingKey == bindingKey {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *baseExchange) Bind(bindingKey string, queueName string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -56,7 +68,7 @@ func (e *baseExchange) Unbind(bindingKey, queueName string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if exists := e.checkBindingExists(bindingKey, queueName); !exists {
+	if exists := e.hasBinding(bindingKey, queueName); !exists {
 		return ErrBindingNotExist
 	}
 
