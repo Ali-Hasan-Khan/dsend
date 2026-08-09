@@ -343,7 +343,9 @@ if err := p.DeleteQueue(ctx, "orders"); err != nil {
       <h2>Consumer</h2>
       <p>
         A consumer is push-based: subscribe once, then loop on <code class="inline-code">Receive</code>.
-        The broker schedules deliveries round-robin across all consumers subscribed to a queue.
+        The broker schedules deliveries round-robin across all consumers subscribed to a queue, up to each
+        consumer's prefetch limit (default 10 unacked deliveries). See
+        <a href="#semantics" style="text-decoration:underline">Delivery semantics</a>.
       </p>
 
       <h3>Construct &amp; subscribe</h3>
@@ -791,10 +793,17 @@ fmt.Println(q.DlqCount)</code></pre>
     <section id="semantics">
       <h2>Delivery semantics</h2>
 
-      <h3>Push with round-robin</h3>
+      <h3>Push with round-robin &amp; prefetch</h3>
       <p>
         The broker pushes deliveries to subscribed consumers in round-robin order. Add more consumers to
-        a queue and load is spread across them automatically. Each consumer receives one message at a time.
+        a queue and load is spread across them automatically. Each consumer can hold up to
+        <code class="inline-code">ConsumerPrefetch</code> unacknowledged deliveries at once (default 10).
+      </p>
+      <p>
+        A consumer at its prefetch limit is skipped by the scheduler until it acknowledges a delivery. This
+        is backpressure: a slow consumer isn't flooded with more work than it can handle, and a fast consumer
+        isn't starved behind a slow one. Messages bound for a saturated consumer stay queued instead of being
+        pushed.
       </p>
 
       <h3>At-least-once</h3>
@@ -825,6 +834,7 @@ fmt.Println(q.DlqCount)</code></pre>
           <tr><td><code>RedeliveryInterval</code></td><td>5 s</td><td>How often expired in-flight messages are swept.</td></tr>
           <tr><td><code>MaxRetries</code></td><td>3</td><td>Redeliveries before a message is dead-lettered.</td></tr>
           <tr><td><code>QueueSize</code></td><td>20</td><td>Capacity of each queue's ring buffer.</td></tr>
+          <tr><td><code>ConsumerPrefetch</code></td><td>10</td><td>Max unacknowledged deliveries a single consumer may hold in flight.</td></tr>
         </tbody>
       </table>
       <p>
