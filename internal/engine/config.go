@@ -7,6 +7,7 @@ type Config struct {
 	RedeliveryInterval time.Duration
 	MaxRetries         int
 	QueueSize          int
+	ConsumerPrefetch   int
 }
 
 func DefaultConfig() Config {
@@ -15,5 +16,6 @@ func DefaultConfig() Config {
 		RedeliveryInterval: 5 * time.Second,
 		MaxRetries:         3,
 		QueueSize:          20,
+		ConsumerPrefetch:   10,
 	}
 }

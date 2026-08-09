@@ -89,7 +89,7 @@
       <div class="section-head center">
         <span class="eyebrow">What you get</span>
         <h2>Everything a broker needs. Nothing it doesn't.</h2>
-        <p>Seven core building blocks, implemented from scratch and exposed through a small, typed Go SDK.</p>
+        <p>Eight core building blocks, implemented from scratch and exposed through a small, typed Go SDK.</p>
       </div>
 
       <div class="feature-grid">
@@ -130,6 +130,13 @@
         </div>
         <div class="feature-card">
           <div class="feature-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+          </div>
+          <h3>Consumer backpressure</h3>
+          <p>Each consumer holds at most a prefetch count of unacked deliveries. Slow consumers don't hog the queue — fast ones aren't starved.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>
           </div>
           <h3>Durable write-ahead log</h3>
@@ -151,7 +158,7 @@
       <div class="section-head">
         <span class="eyebrow">How it works</span>
         <h2>Producers push. Consumers pull with a broker in between.</h2>
-        <p>One TCP connection per client, JSON on the wire, and a broker core that schedules delivery round-robin across consumers.</p>
+        <p>One TCP connection per client, JSON on the wire, and a broker core that schedules delivery round-robin across consumers — up to each consumer's prefetch limit.</p>
       </div>
 
       <div class="arch">
@@ -192,7 +199,8 @@
       <p class="arch-caption">
         <span class="arrow">&#8617;</span>
         Consumers return an ack token after processing; the broker removes the message from its in-flight
-        registry. Unacked messages are redelivered <code>ack-timeout</code> later.
+        registry. Each consumer is capped at a prefetch count of unacked deliveries, and unacked messages
+        are redelivered <code>ack-timeout</code> later.
       </p>
     </div>
   </section>

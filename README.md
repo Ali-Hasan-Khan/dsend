@@ -26,6 +26,7 @@ The project focuses on correctness, simplicity, and learning while providing a s
 - Queue-scoped consumers, round-robin delivery, DLQs, retries, and metrics
 - Push-based message delivery
 - Round-robin consumer scheduling
+- Consumer prefetch & backpressure (slow-consumer protection)
 - At-least-once delivery semantics
 - Message acknowledgements (ACK)
 - Automatic message redelivery
@@ -254,6 +255,21 @@ dsend subscribe
 
 ---
 
+## Consumer Backpressure
+
+The broker caps how many unacknowledged deliveries each consumer session may have
+outstanding — the **prefetch count** (default 10). A consumer at its limit is
+skipped by the scheduler until it acknowledges a delivery, so a slow consumer
+can't be flooded with more work than it can handle, and a fast consumer isn't
+starved behind a slow one. Messages bound for a saturated consumer stay queued
+instead of being pushed.
+
+The prefetch count is a broker-level setting in `engine.DefaultConfig()`
+(`ConsumerPrefetch`). Lower it to limit a consumer's outstanding work; raise it
+to let faster consumers buffer more messages.
+
+---
+
 ## Broker Metrics
 
 ### Linux / macOS
@@ -371,6 +387,7 @@ GitHub Actions is configured in [`.github/workflows`](.github/workflows):
 - Automatic retry on ACK timeout
 - Dead Letter Queue (DLQ)
 - Round-robin consumer load balancing
+- Consumer prefetch & backpressure
 - Persistent storage using Write-Ahead Logging
 - Automatic recovery after broker restart
 - Runtime metrics

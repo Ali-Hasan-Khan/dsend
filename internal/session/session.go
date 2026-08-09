@@ -7,10 +7,11 @@ import (
 )
 
 type ConsumerSession struct {
-	ID         string
-	Deliveries chan model.Delivery
-	Closed     chan struct{}
-	closeOnce  sync.Once
+	ID           string
+	Deliveries   chan model.Delivery
+	Closed       chan struct{}
+	closeOnce    sync.Once
+	UnackedCount int
 }
 
 func NewConsumerSession(ID string) *ConsumerSession {
@@ -25,4 +26,8 @@ func (cs *ConsumerSession) Close() {
 	cs.closeOnce.Do(func() {
 		close(cs.Closed)
 	})
+}
+
+func (cs *ConsumerSession) IsEligible(maxPrefetchCount int) bool {
+	return cs.UnackedCount < maxPrefetchCount
 }
