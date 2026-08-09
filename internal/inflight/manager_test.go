@@ -35,7 +35,7 @@ func TestManagerAddAndIsPresent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m := NewManager()
 
-			m.Add(tt.token, newMessage(tt.msgID))
+			m.Add(tt.token, newMessage(tt.msgID), "consumer-1")
 
 			if !m.IsPresent(tt.token) {
 				t.Fatalf("expected token %s to be present", tt.token)
@@ -51,7 +51,7 @@ func TestManagerAddAndIsPresent(t *testing.T) {
 func TestManagerRemove(t *testing.T) {
 	m := NewManager()
 
-	m.Add("abc", newMessage("1"))
+	m.Add("abc", newMessage("1"), "consumer-1")
 
 	if !m.IsPresent("abc") {
 		t.Fatal("token should exist")
@@ -71,7 +71,7 @@ func TestManagerRemove(t *testing.T) {
 func TestManagerRemoveInvalidToken(t *testing.T) {
 	m := NewManager()
 
-	m.Add("abc", newMessage("1"))
+	m.Add("abc", newMessage("1"), "consumer-1")
 
 	m.Remove("does-not-exist")
 
@@ -115,7 +115,7 @@ func TestManagerExpired(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m := NewManager()
 
-			m.Add("abc", newMessage("1"))
+			m.Add("abc", newMessage("1"), "consumer-1")
 
 			time.Sleep(tt.sleep)
 
@@ -135,9 +135,9 @@ func TestManagerExpired(t *testing.T) {
 func TestManagerMultipleExpiredMessages(t *testing.T) {
 	m := NewManager()
 
-	m.Add("1", newMessage("1"))
-	m.Add("2", newMessage("2"))
-	m.Add("3", newMessage("3"))
+	m.Add("1", newMessage("1"), "consumer-1")
+	m.Add("2", newMessage("2"), "consumer-1")
+	m.Add("3", newMessage("3"), "consumer-1")
 
 	time.Sleep(25 * time.Millisecond)
 
@@ -155,9 +155,9 @@ func TestManagerSize(t *testing.T) {
 		t.Fatal("new manager should be empty")
 	}
 
-	m.Add("1", newMessage("1"))
-	m.Add("2", newMessage("2"))
-	m.Add("3", newMessage("3"))
+	m.Add("1", newMessage("1"), "consumer-1")
+	m.Add("2", newMessage("2"), "consumer-1")
+	m.Add("3", newMessage("3"), "consumer-1")
 
 	if m.Size() != 3 {
 		t.Fatalf("expected size 3 got %d", m.Size())
@@ -167,5 +167,43 @@ func TestManagerSize(t *testing.T) {
 
 	if m.Size() != 2 {
 		t.Fatalf("expected size 2 got %d", m.Size())
+	}
+}
+
+func TestManagerTracksConsumerID(t *testing.T) {
+	m := NewManager()
+
+	m.Add("token", newMessage("1"), "consumer-42")
+
+	got, ok := m.Get("token")
+	if !ok {
+		t.Fatal("expected token to be present")
+	}
+	if got.ConsumerID != "consumer-42" {
+		t.Fatalf("expected consumer id %q got %q", "consumer-42", got.ConsumerID)
+	}
+
+	removed, ok := m.Remove("token")
+	if !ok {
+		t.Fatal("expected token to be removed")
+	}
+	if removed.ConsumerID != "consumer-42" {
+		t.Fatalf("expected removed consumer id %q got %q", "consumer-42", removed.ConsumerID)
+	}
+}
+
+func TestManagerExpiredCarriesConsumerID(t *testing.T) {
+	m := NewManager()
+
+	m.Add("token", newMessage("1"), "consumer-7")
+
+	time.Sleep(25 * time.Millisecond)
+
+	expired := m.Expired(10 * time.Millisecond)
+	if len(expired) != 1 {
+		t.Fatalf("expected 1 expired message got %d", len(expired))
+	}
+	if expired[0].ConsumerID != "consumer-7" {
+		t.Fatalf("expected consumer id %q got %q", "consumer-7", expired[0].ConsumerID)
 	}
 }

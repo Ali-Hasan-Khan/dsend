@@ -18,36 +18,37 @@ func NewManager() *Manager {
 	}
 }
 
-func (m *Manager) Add(token string, message model.Message) {
+func (m *Manager) Add(token string, message model.Message, sessionID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.deliveries[token] = model.InFlightMessage{
 		Message:     message,
 		DeliveredAt: time.Now(),
+		ConsumerID:  sessionID,
 	}
 }
 
-func (m *Manager) Remove(token string) (model.Message, bool) {
+func (m *Manager) Remove(token string) (model.InFlightMessage, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.deliveries[token]; !ok {
-		return model.Message{}, false
+		return model.InFlightMessage{}, false
 	}
 	inflight := m.deliveries[token]
 	delete(m.deliveries, token)
-	return inflight.Message, true
+	return inflight, true
 }
 
-func (m *Manager) Get(token string) (model.Message, bool) {
+func (m *Manager) Get(token string) (model.InFlightMessage, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	delivery, ok := m.deliveries[token]
 	if !ok {
-		return model.Message{}, false
+		return model.InFlightMessage{}, false
 	}
 
-	return delivery.Message, true
+	return delivery, true
 }
 
 func (m *Manager) Expired(timeout time.Duration) []model.Delivery {
@@ -57,8 +58,9 @@ func (m *Manager) Expired(timeout time.Duration) []model.Delivery {
 	for idx, item := range m.deliveries {
 		if time.Since(item.DeliveredAt) > timeout {
 			expiredMessages = append(expiredMessages, model.Delivery{
-				Message:  item.Message,
-				AckToken: idx,
+				Message:    item.Message,
+				AckToken:   idx,
+				ConsumerID: item.ConsumerID,
 			})
 		}
 	}

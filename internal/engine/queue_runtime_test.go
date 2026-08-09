@@ -221,17 +221,17 @@ func TestQueueRuntimeRecoveryFromMessages(t *testing.T) {
 }
 
 func TestSubscribeReceivesPublishedMessages(t *testing.T) {
-	broker := newIntegrationBroker(10)
+	queue := newIntegrationQueueRuntime(10)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go broker.RunDistributor(ctx)
+	go queue.RunDistributor(ctx)
 
 	consumer := session.NewConsumerSession("consumer-1")
-	broker.Subscribe(consumer)
+	queue.Subscribe(consumer)
 
-	err := broker.Publish(model.Message{
+	err := queue.Publish(model.Message{
 		ID:      "1",
 		Payload: "hello",
 	})
@@ -255,7 +255,7 @@ func TestSubscribeReceivesPublishedMessages(t *testing.T) {
 		t.Fatal("consumer did not receive message")
 	}
 
-	metrics := broker.Metrics()
+	metrics := queue.Metrics()
 
 	if metrics.ConsumerSessionCount != 1 {
 		t.Fatalf("expected 1 consumer got %d", metrics.ConsumerSessionCount)
@@ -263,20 +263,20 @@ func TestSubscribeReceivesPublishedMessages(t *testing.T) {
 }
 
 func TestUnsubscribeStopsDeliveries(t *testing.T) {
-	broker := newIntegrationBroker(10)
+	queue := newIntegrationQueueRuntime(10)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go broker.RunDistributor(ctx)
+	go queue.RunDistributor(ctx)
 
 	consumer := session.NewConsumerSession("consumer")
 
-	broker.Subscribe(consumer)
+	queue.Subscribe(consumer)
 
-	broker.Unsubscribe(consumer.ID)
+	queue.Unsubscribe(consumer.ID)
 
-	err := broker.Publish(model.Message{
+	err := queue.Publish(model.Message{
 		ID: "1",
 	})
 	if err != nil {
@@ -291,55 +291,55 @@ func TestUnsubscribeStopsDeliveries(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 
-	if broker.Metrics().ConsumerSessionCount != 0 {
+	if queue.Metrics().ConsumerSessionCount != 0 {
 		t.Fatal("consumer still registered")
 	}
 }
 
 func TestDoubleUnsubscribeIsSafe(t *testing.T) {
-	broker := newIntegrationBroker(10)
+	queue := newIntegrationQueueRuntime(10)
 
 	consumer := session.NewConsumerSession("consumer")
 
-	broker.Subscribe(consumer)
+	queue.Subscribe(consumer)
 
-	broker.Unsubscribe(consumer.ID)
+	queue.Unsubscribe(consumer.ID)
 
 	// should not panic
-	broker.Unsubscribe(consumer.ID)
+	queue.Unsubscribe(consumer.ID)
 
-	if broker.Metrics().ConsumerSessionCount != 0 {
+	if queue.Metrics().ConsumerSessionCount != 0 {
 		t.Fatal("expected zero consumers")
 	}
 }
 
 func TestMultipleSubscribersRegistered(t *testing.T) {
-	broker := newIntegrationBroker(10)
+	queue := newIntegrationQueueRuntime(10)
 
 	c1 := session.NewConsumerSession("1")
 	c2 := session.NewConsumerSession("2")
 	c3 := session.NewConsumerSession("3")
 
-	broker.Subscribe(c1)
-	broker.Subscribe(c2)
-	broker.Subscribe(c3)
+	queue.Subscribe(c1)
+	queue.Subscribe(c2)
+	queue.Subscribe(c3)
 
-	if broker.Metrics().ConsumerSessionCount != 3 {
+	if queue.Metrics().ConsumerSessionCount != 3 {
 		t.Fatalf(
 			"expected 3 consumers got %d",
-			broker.Metrics().ConsumerSessionCount,
+			queue.Metrics().ConsumerSessionCount,
 		)
 	}
 }
 
 func TestUnsubscribeClosesSession(t *testing.T) {
-	broker := newIntegrationBroker(10)
+	queue := newIntegrationQueueRuntime(10)
 
 	consumer := session.NewConsumerSession("consumer")
 
-	broker.Subscribe(consumer)
+	queue.Subscribe(consumer)
 
-	broker.Unsubscribe(consumer.ID)
+	queue.Unsubscribe(consumer.ID)
 
 	select {
 
@@ -353,23 +353,23 @@ func TestUnsubscribeClosesSession(t *testing.T) {
 func TestRoundRobinAfterConsumerLeaves(t *testing.T) {
 	const totalMessages = 100
 
-	broker := newIntegrationBroker(200)
+	queue := newIntegrationQueueRuntimeWithPrefetch(200, totalMessages)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go broker.RunDistributor(ctx)
+	go queue.RunDistributor(ctx)
 
 	c1 := session.NewConsumerSession("c1")
 	c2 := session.NewConsumerSession("c2")
 	c3 := session.NewConsumerSession("c3")
 
-	broker.Subscribe(c1)
-	broker.Subscribe(c2)
-	broker.Subscribe(c3)
+	queue.Subscribe(c1)
+	queue.Subscribe(c2)
+	queue.Subscribe(c3)
 
 	// Remove middle consumer.
-	broker.Unsubscribe(c2.ID)
+	queue.Unsubscribe(c2.ID)
 
 	var c1Count atomic.Int64
 	var c2Count atomic.Int64
@@ -388,7 +388,7 @@ func TestRoundRobinAfterConsumerLeaves(t *testing.T) {
 				case d := <-s.Deliveries:
 					count.Add(1)
 
-					if err := broker.Ack(d.AckToken); err != nil {
+					if err := queue.Ack(d.AckToken); err != nil {
 						t.Errorf("ack failed: %v", err)
 						return
 					}
@@ -404,7 +404,7 @@ func TestRoundRobinAfterConsumerLeaves(t *testing.T) {
 	startConsumer(c3, &c3Count)
 
 	for i := 0; i < totalMessages; i++ {
-		if err := broker.Publish(model.Message{
+		if err := queue.Publish(model.Message{
 			ID:      fmt.Sprintf("%d", i),
 			Payload: fmt.Sprintf("msg-%d", i),
 		}); err != nil {
@@ -446,9 +446,9 @@ func TestRoundRobinAfterConsumerLeaves(t *testing.T) {
 		t.Fatalf("consumer3 received %d messages", c3Count.Load())
 	}
 
-	waitForRuntimeIdle(t, broker)
+	waitForRuntimeIdle(t, queue)
 
-	metrics := broker.Metrics()
+	metrics := queue.Metrics()
 
 	if metrics.ConsumerSessionCount != 2 {
 		t.Fatalf(
@@ -483,7 +483,7 @@ func TestRecoveredMessagesCanBeConsumed(t *testing.T) {
 		{ID: "5", Payload: "five"},
 	}
 
-	broker := NewQueueRuntime(
+	queue := NewQueueRuntime(
 		model.DefaultQueueName,
 		DefaultConfig(),
 		msgs,
@@ -496,11 +496,11 @@ func TestRecoveredMessagesCanBeConsumed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go broker.RunDistributor(ctx)
+	go queue.RunDistributor(ctx)
 
 	consumer := session.NewConsumerSession("consumer")
 
-	broker.Subscribe(consumer)
+	queue.Subscribe(consumer)
 
 	for i := range msgs {
 
@@ -516,7 +516,7 @@ func TestRecoveredMessagesCanBeConsumed(t *testing.T) {
 				)
 			}
 
-			if err := broker.Ack(d.AckToken); err != nil {
+			if err := queue.Ack(d.AckToken); err != nil {
 				t.Fatal(err)
 			}
 
@@ -525,9 +525,9 @@ func TestRecoveredMessagesCanBeConsumed(t *testing.T) {
 		}
 	}
 
-	waitForRuntimeIdle(t, broker)
+	waitForRuntimeIdle(t, queue)
 
-	metrics := broker.Metrics()
+	metrics := queue.Metrics()
 
 	if metrics.QueueDepth != 0 {
 		t.Fatal("queue should be empty")
@@ -561,19 +561,19 @@ func newRedeliveryBroker() *QueueRuntime {
 }
 
 func TestAckPreventsRedelivery(t *testing.T) {
-	broker := newRedeliveryBroker()
+	queue := newRedeliveryBroker()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go broker.RunDistributor(ctx)
-	go broker.StartRedeliveryWorker(ctx)
+	go queue.RunDistributor(ctx)
+	go queue.StartRedeliveryWorker(ctx)
 
 	consumer := session.NewConsumerSession("consumer")
 
-	broker.Subscribe(consumer)
+	queue.Subscribe(consumer)
 
-	err := broker.Publish(model.Message{
+	err := queue.Publish(model.Message{
 		ID:      "msg-1",
 		Payload: "hello",
 	})
@@ -590,7 +590,7 @@ func TestAckPreventsRedelivery(t *testing.T) {
 		t.Fatal("message was not delivered")
 	}
 
-	if err := broker.Ack(delivery.AckToken); err != nil {
+	if err := queue.Ack(delivery.AckToken); err != nil {
 		t.Fatal(err)
 	}
 
@@ -602,9 +602,9 @@ func TestAckPreventsRedelivery(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 
-	waitForRuntimeIdle(t, broker)
+	waitForRuntimeIdle(t, queue)
 
-	metrics := broker.Metrics()
+	metrics := queue.Metrics()
 
 	if metrics.RedeliveredCount != 0 {
 		t.Fatalf("expected 0 redeliveries got %d", metrics.RedeliveredCount)
@@ -624,19 +624,19 @@ func TestAckPreventsRedelivery(t *testing.T) {
 }
 
 func TestMessageIsRedelivered(t *testing.T) {
-	broker := newRedeliveryBroker()
+	queue := newRedeliveryBroker()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go broker.RunDistributor(ctx)
-	go broker.StartRedeliveryWorker(ctx)
+	go queue.RunDistributor(ctx)
+	go queue.StartRedeliveryWorker(ctx)
 
 	consumer := session.NewConsumerSession("consumer")
 
-	broker.Subscribe(consumer)
+	queue.Subscribe(consumer)
 
-	err := broker.Publish(model.Message{
+	err := queue.Publish(model.Message{
 		ID:      "msg-1",
 		Payload: "hello",
 	})
@@ -674,13 +674,13 @@ func TestMessageIsRedelivered(t *testing.T) {
 		t.Fatalf("expected retry=1 got=%d", second.Retry)
 	}
 
-	if err := broker.Ack(second.AckToken); err != nil {
+	if err := queue.Ack(second.AckToken); err != nil {
 		t.Fatal(err)
 	}
 
-	waitForRuntimeIdle(t, broker)
+	waitForRuntimeIdle(t, queue)
 
-	metrics := broker.Metrics()
+	metrics := queue.Metrics()
 
 	if metrics.RedeliveredCount != 1 {
 		t.Fatalf("expected 1 redelivery got=%d", metrics.RedeliveredCount)
@@ -708,7 +708,7 @@ func TestMessageMovesToDLQAfterMaxRetries(t *testing.T) {
 
 	dlq := queue.NewDLQ()
 
-	broker := NewQueueRuntime(
+	queue := NewQueueRuntime(
 		model.DefaultQueueName,
 		cfg,
 		nil,
@@ -721,14 +721,14 @@ func TestMessageMovesToDLQAfterMaxRetries(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go broker.RunDistributor(ctx)
-	go broker.StartRedeliveryWorker(ctx)
+	go queue.RunDistributor(ctx)
+	go queue.StartRedeliveryWorker(ctx)
 
 	consumer := session.NewConsumerSession("consumer")
 
-	broker.Subscribe(consumer)
+	queue.Subscribe(consumer)
 
-	err := broker.Publish(model.Message{
+	err := queue.Publish(model.Message{
 		ID:      "msg-1",
 		Payload: "hello",
 	})
@@ -769,7 +769,7 @@ func TestMessageMovesToDLQAfterMaxRetries(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 
-	metrics := broker.Metrics()
+	metrics := queue.Metrics()
 
 	if metrics.DlqCount != 1 {
 		t.Fatalf("expected dlq size=1 got=%d", metrics.DlqCount)
@@ -822,11 +822,11 @@ func TestMessageMovesToDLQAfterMaxRetries(t *testing.T) {
 }
 
 func TestShutdownRejectsNewPublishes(t *testing.T) {
-	broker := newTestQueueRuntime(&mockWAL{})
+	queue := newTestQueueRuntime(&mockWAL{})
 
-	broker.Shutdown()
+	queue.Shutdown()
 
-	err := broker.Publish(model.Message{
+	err := queue.Publish(model.Message{
 		ID: "1",
 	})
 
@@ -839,7 +839,7 @@ func TestShutdownUnblocksBlockedPublisher(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.QueueSize = 1
 
-	broker := NewQueueRuntime(
+	queue := NewQueueRuntime(
 		model.DefaultQueueName,
 		cfg,
 		nil,
@@ -849,7 +849,7 @@ func TestShutdownUnblocksBlockedPublisher(t *testing.T) {
 		inflight.NewManager(),
 	)
 
-	err := broker.Publish(model.Message{
+	err := queue.Publish(model.Message{
 		ID: "1",
 	})
 	if err != nil {
@@ -859,14 +859,14 @@ func TestShutdownUnblocksBlockedPublisher(t *testing.T) {
 	errCh := make(chan error, 1)
 
 	go func() {
-		errCh <- broker.Publish(model.Message{
+		errCh <- queue.Publish(model.Message{
 			ID: "2",
 		})
 	}()
 
 	time.Sleep(100 * time.Millisecond)
 
-	broker.Shutdown()
+	queue.Shutdown()
 
 	select {
 
@@ -882,22 +882,22 @@ func TestShutdownUnblocksBlockedPublisher(t *testing.T) {
 }
 
 func TestShutdownClosesAllConsumerSessions(t *testing.T) {
-	broker := newIntegrationBroker(10)
+	queue := newIntegrationQueueRuntime(10)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go broker.RunDistributor(ctx)
+	go queue.RunDistributor(ctx)
 
 	c1 := session.NewConsumerSession("c1")
 	c2 := session.NewConsumerSession("c2")
 	c3 := session.NewConsumerSession("c3")
 
-	broker.Subscribe(c1)
-	broker.Subscribe(c2)
-	broker.Subscribe(c3)
+	queue.Subscribe(c1)
+	queue.Subscribe(c2)
+	queue.Subscribe(c3)
 
-	broker.Shutdown()
+	queue.Shutdown()
 
 	for _, consumer := range []*session.ConsumerSession{
 		c1,
@@ -914,20 +914,20 @@ func TestShutdownClosesAllConsumerSessions(t *testing.T) {
 		}
 	}
 
-	if broker.Metrics().ConsumerSessionCount != 0 {
+	if queue.Metrics().ConsumerSessionCount != 0 {
 		t.Fatal("expected zero registered consumers")
 	}
 }
 
 func TestShutdownIsIdempotent(t *testing.T) {
-	broker := newTestQueueRuntime(&mockWAL{})
+	queue := newTestQueueRuntime(&mockWAL{})
 
-	broker.Shutdown()
+	queue.Shutdown()
 
 	// Should not panic.
-	broker.Shutdown()
+	queue.Shutdown()
 
-	err := broker.Publish(model.Message{})
+	err := queue.Publish(model.Message{})
 
 	if !errors.Is(err, ErrBrokerClosed) {
 		t.Fatalf("expected ErrBrokerClosed got %v", err)
@@ -949,7 +949,7 @@ func TestAck(t *testing.T) {
 			setup: func(b *QueueRuntime) {
 				b.inFlightManager.Add("token-1", model.Message{
 					ID: "msg-1",
-				})
+				}, "consumer-1")
 			},
 			wantAcked:    1,
 			wantInflight: 0,
@@ -968,7 +968,7 @@ func TestAck(t *testing.T) {
 			setup: func(b *QueueRuntime) {
 				b.inFlightManager.Add("token-2", model.Message{
 					ID: "msg-2",
-				})
+				}, "consumer-1")
 
 				if err := b.Ack("token-2"); err != nil {
 					t.Fatalf("unexpected setup error: %v", err)
@@ -1046,7 +1046,7 @@ func TestAckDoesNotChangeProducedCount(t *testing.T) {
 
 	b.producedCount = 5
 
-	b.inFlightManager.Add("token", model.Message{})
+	b.inFlightManager.Add("token", model.Message{}, "consumer-1")
 
 	if err := b.Ack("token"); err != nil {
 		t.Fatal(err)
@@ -1071,7 +1071,7 @@ func TestAckDoesNotChangeQueueDepth(t *testing.T) {
 	b.queue.Push(model.Message{ID: "1"})
 	b.queue.Push(model.Message{ID: "2"})
 
-	b.inFlightManager.Add("token", model.Message{})
+	b.inFlightManager.Add("token", model.Message{}, "consumer-1")
 
 	before := b.Metrics().QueueDepth
 
@@ -1087,5 +1087,192 @@ func TestAckDoesNotChangeQueueDepth(t *testing.T) {
 			before,
 			after,
 		)
+	}
+}
+
+func unackedCountFor(q *QueueRuntime, sess *session.ConsumerSession) int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return sess.UnackedCount
+}
+
+func TestConsumerPrefetchLimitsOutstandingDeliveries(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.QueueSize = 50
+	cfg.ConsumerPrefetch = 2
+
+	queue := NewQueueRuntime(
+		model.DefaultQueueName,
+		cfg,
+		nil,
+		&mockWAL{},
+		queue.NewRingBufferQueue(cfg.QueueSize),
+		queue.NewDLQ(),
+		inflight.NewManager(),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go queue.RunDistributor(ctx)
+
+	consumer := session.NewConsumerSession("consumer-1")
+	if err := queue.Subscribe(consumer); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 5; i++ {
+		if err := queue.Publish(model.Message{Payload: fmt.Sprintf("msg-%d", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	receive := func() model.Delivery {
+		select {
+		case d := <-consumer.Deliveries:
+			return d
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for delivery")
+		}
+		return model.Delivery{}
+	}
+
+	noDeliveryWithin := func(timeout time.Duration) {
+		select {
+		case d := <-consumer.Deliveries:
+			t.Fatalf("unexpected delivery %q while consumer is at the prefetch limit", d.Payload)
+		case <-time.After(timeout):
+		}
+	}
+
+	first := receive()
+	second := receive()
+
+	if got := unackedCountFor(queue, consumer); got != 2 {
+		t.Fatalf("expected 2 unacked deliveries got %d", got)
+	}
+
+	// at the prefetch limit — no further deliveries until an ack
+	noDeliveryWithin(200 * time.Millisecond)
+
+	if err := queue.Ack(first.AckToken); err != nil {
+		t.Fatal(err)
+	}
+	if err := queue.Ack(second.AckToken); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := unackedCountFor(queue, consumer); got != 0 {
+		t.Fatalf("expected 0 unacked after acks got %d", got)
+	}
+
+	third := receive()
+	fourth := receive()
+
+	if got := unackedCountFor(queue, consumer); got != 2 {
+		t.Fatalf("expected 2 unacked deliveries got %d", got)
+	}
+
+	noDeliveryWithin(200 * time.Millisecond)
+
+	if err := queue.Ack(third.AckToken); err != nil {
+		t.Fatal(err)
+	}
+	if err := queue.Ack(fourth.AckToken); err != nil {
+		t.Fatal(err)
+	}
+
+	fifth := receive()
+	if err := queue.Ack(fifth.AckToken); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := queue.Metrics().QueueDepth; got != 0 {
+		t.Fatalf("expected empty queue got %d", got)
+	}
+}
+
+func TestConsumerPrefetchSkipsFullConsumer(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.QueueSize = 10
+	cfg.ConsumerPrefetch = 1
+
+	queue := NewQueueRuntime(
+		model.DefaultQueueName,
+		cfg,
+		nil,
+		&mockWAL{},
+		queue.NewRingBufferQueue(cfg.QueueSize),
+		queue.NewDLQ(),
+		inflight.NewManager(),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go queue.RunDistributor(ctx)
+
+	c1 := session.NewConsumerSession("c1")
+	c2 := session.NewConsumerSession("c2")
+	if err := queue.Subscribe(c1); err != nil {
+		t.Fatal(err)
+	}
+	if err := queue.Subscribe(c2); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 3; i++ {
+		if err := queue.Publish(model.Message{Payload: fmt.Sprintf("msg-%d", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	waitForDelivery := func(c *session.ConsumerSession) model.Delivery {
+		select {
+		case d := <-c.Deliveries:
+			return d
+		case <-time.After(2 * time.Second):
+			t.Fatalf("consumer %s did not receive a delivery", c.ID)
+		}
+		return model.Delivery{}
+	}
+
+	_ = waitForDelivery(c1)
+	d2 := waitForDelivery(c2)
+
+	// both consumers are at the prefetch limit, so the third message stays queued
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		select {
+		case d := <-c1.Deliveries:
+			t.Fatalf("c1 received unexpected delivery %q while at the prefetch limit", d.Payload)
+		case d := <-c2.Deliveries:
+			t.Fatalf("c2 received unexpected delivery %q while at the prefetch limit", d.Payload)
+		default:
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+
+	if got := queue.Metrics().QueueDepth; got != 1 {
+		t.Fatalf("expected 1 queued message got %d", got)
+	}
+
+	// freeing c2's slot lets it take the queued message
+	if err := queue.Ack(d2.AckToken); err != nil {
+		t.Fatal(err)
+	}
+
+	d3 := waitForDelivery(c2)
+
+	if got := unackedCountFor(queue, c1); got != 1 {
+		t.Fatalf("expected c1 to still hold 1 unacked delivery got %d", got)
+	}
+
+	if err := queue.Ack(d3.AckToken); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := queue.Metrics().QueueDepth; got != 0 {
+		t.Fatalf("expected empty queue got %d", got)
 	}
 }

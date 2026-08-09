@@ -14,10 +14,15 @@ import (
 	"github.com/Ali-Hasan-Khan/dsend/internal/session"
 )
 
-func newIntegrationBroker(queueSize int) *QueueRuntime {
+func newIntegrationQueueRuntime(queueSize int) *QueueRuntime {
+	return newIntegrationQueueRuntimeWithPrefetch(queueSize, DefaultConfig().ConsumerPrefetch)
+}
+
+func newIntegrationQueueRuntimeWithPrefetch(queueSize, consumerPrefetch int) *QueueRuntime {
 	cfg := DefaultConfig()
 	cfg.QueueSize = queueSize
 	cfg.AckTimeout = time.Second
+	cfg.ConsumerPrefetch = consumerPrefetch
 
 	return NewQueueRuntime(
 		model.DefaultQueueName,
@@ -55,15 +60,15 @@ func TestQueueRuntimePublishConsumeAck(t *testing.T) {
 		totalMessages       = producers * messagesPerProducer
 	)
 
-	broker := newIntegrationBroker(200)
+	queue := newIntegrationQueueRuntime(200)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go broker.RunDistributor(ctx)
+	go queue.RunDistributor(ctx)
 
 	consumer := session.NewConsumerSession("consumer-1")
-	broker.Subscribe(consumer)
+	queue.Subscribe(consumer)
 
 	var producerWG sync.WaitGroup
 
@@ -74,7 +79,7 @@ func TestQueueRuntimePublishConsumeAck(t *testing.T) {
 			defer producerWG.Done()
 
 			for i := 0; i < messagesPerProducer; i++ {
-				err := broker.Publish(model.Message{
+				err := queue.Publish(model.Message{
 					Payload: fmt.Sprintf("producer-%d-msg-%d", id, i),
 				})
 
@@ -96,7 +101,7 @@ func TestQueueRuntimePublishConsumeAck(t *testing.T) {
 
 			case delivery := <-consumer.Deliveries:
 
-				if err := broker.Ack(delivery.AckToken); err != nil {
+				if err := queue.Ack(delivery.AckToken); err != nil {
 					t.Errorf("ack failed: %v", err)
 				}
 
@@ -110,9 +115,9 @@ func TestQueueRuntimePublishConsumeAck(t *testing.T) {
 	producerWG.Wait()
 	consumerWG.Wait()
 
-	waitForRuntimeIdle(t, broker)
+	waitForRuntimeIdle(t, queue)
 
-	metrics := broker.Metrics()
+	metrics := queue.Metrics()
 
 	if metrics.ProducedCount != totalMessages {
 		t.Fatalf(
@@ -148,20 +153,20 @@ func TestQueueRuntimePublishConsumeAck(t *testing.T) {
 func TestQueueRuntimeRoundRobinConsumers(t *testing.T) {
 	const totalMessages = 300
 
-	broker := newIntegrationBroker(500)
+	queue := newIntegrationQueueRuntimeWithPrefetch(500, totalMessages)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go broker.RunDistributor(ctx)
+	go queue.RunDistributor(ctx)
 
 	c1 := session.NewConsumerSession("c1")
 	c2 := session.NewConsumerSession("c2")
 	c3 := session.NewConsumerSession("c3")
 
-	broker.Subscribe(c1)
-	broker.Subscribe(c2)
-	broker.Subscribe(c3)
+	queue.Subscribe(c1)
+	queue.Subscribe(c2)
+	queue.Subscribe(c3)
 
 	var counts [3]atomic.Int64
 	var consumed atomic.Int64
@@ -180,7 +185,7 @@ func TestQueueRuntimeRoundRobinConsumers(t *testing.T) {
 					counts[idx].Add(1)
 					current := consumed.Add(1)
 
-					if err := broker.Ack(d.AckToken); err != nil {
+					if err := queue.Ack(d.AckToken); err != nil {
 						t.Errorf("ack failed: %v", err)
 						return
 					}
@@ -201,7 +206,7 @@ func TestQueueRuntimeRoundRobinConsumers(t *testing.T) {
 	startConsumer(2, c3)
 
 	for i := 0; i < totalMessages; i++ {
-		if err := broker.Publish(model.Message{
+		if err := queue.Publish(model.Message{
 			Payload: fmt.Sprintf("%d", i),
 		}); err != nil {
 			t.Fatal(err)
@@ -240,12 +245,12 @@ func TestQueueRuntimeStress(t *testing.T) {
 		totalMessages = producers * perProducer
 	)
 
-	broker := newIntegrationBroker(totalMessages)
+	queue := newIntegrationQueueRuntime(totalMessages)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go broker.RunDistributor(ctx)
+	go queue.RunDistributor(ctx)
 
 	var consumerWG sync.WaitGroup
 
@@ -255,7 +260,7 @@ func TestQueueRuntimeStress(t *testing.T) {
 
 		s := session.NewConsumerSession(fmt.Sprintf("consumer-%d", i))
 
-		broker.Subscribe(s)
+		queue.Subscribe(s)
 
 		consumerWG.Add(1)
 
@@ -272,7 +277,7 @@ func TestQueueRuntimeStress(t *testing.T) {
 
 				case d := <-sess.Deliveries:
 
-					if err := broker.Ack(d.AckToken); err != nil {
+					if err := queue.Ack(d.AckToken); err != nil {
 						t.Errorf("ack failed: %v", err)
 						return
 					}
@@ -298,7 +303,7 @@ func TestQueueRuntimeStress(t *testing.T) {
 
 			for i := 0; i < perProducer; i++ {
 
-				err := broker.Publish(model.Message{
+				err := queue.Publish(model.Message{
 					Payload: fmt.Sprintf(
 						"producer-%d-%d",
 						id,
@@ -335,9 +340,9 @@ func TestQueueRuntimeStress(t *testing.T) {
 
 	consumerWG.Wait()
 
-	waitForRuntimeIdle(t, broker)
+	waitForRuntimeIdle(t, queue)
 
-	metrics := broker.Metrics()
+	metrics := queue.Metrics()
 
 	if metrics.ProducedCount != totalMessages {
 		t.Fatalf(

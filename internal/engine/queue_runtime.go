@@ -27,9 +27,9 @@ type DeadLetterQueue interface {
 }
 
 type InFlightManager interface {
-	Add(token string, msg model.Message)
-	Remove(token string) (model.Message, bool)
-	Get(token string) (model.Message, bool)
+	Add(token string, msg model.Message, sessionID string)
+	Remove(token string) (model.InFlightMessage, bool)
+	Get(token string) (model.InFlightMessage, bool)
 	IsPresent(token string) bool
 	Size() int
 	Expired(timeout time.Duration) []model.Delivery
@@ -132,7 +132,7 @@ func (q *QueueRuntime) Ack(token string) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	message, ok := q.inFlightManager.Get(token)
+	inflightMessage, ok := q.inFlightManager.Get(token)
 	if !ok {
 		return ErrInvalidAckToken
 	}
@@ -140,8 +140,8 @@ func (q *QueueRuntime) Ack(token string) error {
 	if err := q.wal.Append(model.Record{
 		Type:      model.Acknowledged,
 		Queue:     q.name,
-		Message:   message,
-		MessageID: message.ID,
+		Message:   inflightMessage.Message,
+		MessageID: inflightMessage.ID,
 	}); err != nil {
 		return err
 	}
@@ -151,6 +151,15 @@ func (q *QueueRuntime) Ack(token string) error {
 		q.removeToken(token)
 	}
 	q.ackedCount++
+	sess, exists := q.consumerSessions[inflightMessage.ConsumerID]
+	if exists {
+		sess.UnackedCount--
+	}
+
+	select {
+	case q.notifyDistributor <- struct{}{}:
+	default:
+	}
 
 	return nil
 }
@@ -238,7 +247,14 @@ func (q *QueueRuntime) cancelReservation(delivery model.Delivery) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	q.inFlightManager.Remove(delivery.AckToken)
+	_, ok := q.inFlightManager.Remove(delivery.AckToken)
+	if ok {
+		sess, exists := q.consumerSessions[delivery.ConsumerID]
+		if exists {
+			sess.UnackedCount--
+		}
+	}
+
 	if q.removeToken != nil {
 		q.removeToken(delivery.AckToken)
 	}
@@ -260,8 +276,24 @@ func (q *QueueRuntime) nextSession() (*session.ConsumerSession, bool) {
 		q.nextConsumer = 0
 	}
 
-	id := q.consumerOrder[q.nextConsumer]
-	q.nextConsumer = (q.nextConsumer + 1) % len(q.consumerOrder)
+	var id string
+	var found bool
+	currConsumer := q.nextConsumer
+	for {
+		id = q.consumerOrder[q.nextConsumer]
+		q.nextConsumer = (q.nextConsumer + 1) % len(q.consumerOrder)
+		if q.consumerSessions[id].IsEligible(q.config.ConsumerPrefetch) {
+			found = true
+			break
+		}
+		if q.nextConsumer == currConsumer {
+			break
+		}
+	}
+
+	if !found {
+		return nil, false
+	}
 
 	sess, ok := q.consumerSessions[id]
 	if !ok {
@@ -285,14 +317,16 @@ func (q *QueueRuntime) reserveDelivery() (*session.ConsumerSession, model.Delive
 
 	token := uuid.NewString()
 	message := q.queue.Pop()
-	q.inFlightManager.Add(token, message)
+	q.inFlightManager.Add(token, message, session.ID)
+	session.UnackedCount++
 	if q.registerToken != nil {
 		q.registerToken(token)
 	}
 	q.condProd.Signal()
 	delivery := model.Delivery{
-		Message:  message,
-		AckToken: token,
+		Message:    message,
+		AckToken:   token,
+		ConsumerID: session.ID,
 	}
 
 	return session, delivery, true
@@ -359,6 +393,10 @@ func (q *QueueRuntime) processExpiredMessages() {
 				q.removeToken(item.AckToken)
 			}
 			q.deadletteredCount++
+			sess, exists := q.consumerSessions[item.ConsumerID]
+			if exists {
+				sess.UnackedCount--
+			}
 			continue
 		}
 
@@ -380,6 +418,10 @@ func (q *QueueRuntime) processExpiredMessages() {
 			q.removeToken(item.AckToken)
 		}
 		q.redeliveredCount++
+		sess, exists := q.consumerSessions[item.ConsumerID]
+		if exists {
+			sess.UnackedCount--
+		}
 
 		select {
 		case q.notifyDistributor <- struct{}{}:

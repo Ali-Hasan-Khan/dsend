@@ -1,6 +1,8 @@
 package model
 
-import "time"
+import (
+	"time"
+)
 
 const (
 	DefaultQueueName    = "default"
@@ -16,5 +18,6 @@ type Message struct {
 
 type InFlightMessage struct {
 	Message
+	ConsumerID  string
 	DeliveredAt time.Time `json:"delivered_at"`
 }
