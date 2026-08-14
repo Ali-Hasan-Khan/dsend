@@ -44,6 +44,7 @@
 
       <div class="docs-group-label">Queues</div>
       <a href="#queues">Managing queues</a>
+      <a href="#expiry">Message expiry</a>
 
       <div class="docs-group-label">Exchanges</div>
       <a href="#exchanges">Exchanges &amp; routing</a>
@@ -145,7 +146,7 @@ func main() {
 		panic(err)
 	}
 
-	if err := p.Publish(context.Background(), "default", "orders", "order-1042 created"); err != nil {
+	if err := p.Publish(context.Background(), "default", "orders", "order-1042 created", 0); err != nil {
 		panic(err)
 	}
 	fmt.Println("published")
@@ -223,8 +224,8 @@ func main() {
         </thead>
         <tbody>
           <tr>
-            <td><code>Publish(ctx, exchangeName, routingKey, payload)</code></td>
-            <td>Routes a message through <code>exchangeName</code> to every bound queue whose binding matches <code>routingKey</code>. Returns <code>no route found</code> when nothing matches.</td>
+            <td><code>Publish(ctx, exchangeName, routingKey, payload, ttl)</code></td>
+            <td>Routes a message through <code>exchangeName</code> to every bound queue whose binding matches <code>routingKey</code>. <code>ttl</code> is the message's time-to-live as a <code>time.Duration</code>; pass <code>0</code> for no expiry. Returns <code>no route found</code> when nothing matches.</td>
           </tr>
           <tr>
             <td><code>CreateQueue(ctx, name)</code></td>
@@ -303,10 +304,10 @@ if err := p.CreateQueue(ctx, "emails"); err != nil {
 if err := p.BindQueue(ctx, "default", "emails", "emails"); err != nil {
 	panic(err)
 }
-err := p.Publish(ctx, "default", "emails", `{"to":"ada@example.com","subject":"hi"}`)
+err := p.Publish(ctx, "default", "emails", `{"to":"ada@example.com","subject":"hi"}`, 0)
 
 // Default queue — pre-bound to the default exchange at startup.
-err = p.Publish(ctx, "default", "default", "hello, world")</code></pre>
+err = p.Publish(ctx, "default", "default", "hello, world", 0)</code></pre>
       </div>
       <div class="callout">
         <div>
@@ -452,6 +453,57 @@ if err := p.DeleteQueue(ctx, "orders"); err != nil {
       </div>
     </section>
 
+    <!-- ===================== Message expiry ===================== -->
+    <section id="expiry">
+      <h2>Message expiry</h2>
+      <p>
+        A message can be given a <strong>time-to-live (TTL)</strong> at publish time. The broker anchors
+        expiry to <em>its own clock</em>: when a message is accepted it computes
+        <code class="inline-code">ExpiryAt = now + ttl</code>. Once that time passes, the message is
+        considered expired and is dead-lettered — moved to the queue's DLQ and reflected in
+        <code class="inline-code">DlqCount</code>.
+      </p>
+      <p>
+        Expiry is enforced at delivery time, so an expired message is never handed to a consumer. A
+        dedicated expiry worker additionally sweeps each queue on a timer
+        (<code class="inline-code">ExpiryInterval</code>, default 1s), so expired messages are also
+        cleared when no consumer is connected or the broker is otherwise idle.
+      </p>
+
+      <h3>Publishing with a TTL</h3>
+      <p>
+        Pass a <code class="inline-code">time.Duration</code> as the final argument to
+        <code class="inline-code">Publish</code>. <code class="inline-code">0</code> (or any non-positive
+        value) means the message never expires.
+      </p>
+      <div class="code-block">
+        <div class="code-block-head">
+          <span class="code-block-name">publish_with_ttl.go</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code>// expires 10 seconds after the broker accepts it
+err := p.Publish(ctx, "default", "orders", "order-1042 created", 10*time.Second)
+
+// never expires
+err = p.Publish(ctx, "default", "orders", "order-1042 created", 0)</code></pre>
+      </div>
+
+      <div class="code-block terminal">
+        <div class="code-block-head">
+          <span class="code-block-name">cli</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code><span class="prompt">$</span> ./dsend publish --exchange default --ttl 10s orders "order-1042 created"
+<span class="tok-str">Message Sent successfully</span></code></pre>
+      </div>
+      <p>
+        <code class="inline-code">--ttl</code> accepts Go duration strings (<code class="inline-code">10s</code>,
+        <code class="inline-code">5m</code>, <code class="inline-code">1h30m</code>) and must appear before the
+        <code class="inline-code">&lt;routingKey&gt;</code> and <code class="inline-code">&lt;payload&gt;</code>
+        arguments. Messages published without <code class="inline-code">--ttl</code> never expire.
+      </p>
+    </section>
+
     <!-- ===================== Exchanges ===================== -->
     <section id="exchanges">
       <h2>Exchanges &amp; routing</h2>
@@ -530,10 +582,10 @@ if err := p.BindQueue(ctx, "events", "audit", "events.#"); err != nil {
 	panic(err)
 }
 
-if err := p.Publish(ctx, "events", "orders.created", "order-1042 created"); err != nil {
+if err := p.Publish(ctx, "events", "orders.created", "order-1042 created", 0); err != nil {
 	panic(err)
 }
-if err := p.Publish(ctx, "events", "orders.shipped", "order-1042 shipped"); err != nil {
+if err := p.Publish(ctx, "events", "orders.shipped", "order-1042 shipped", 0); err != nil {
 	panic(err)
 }</code></pre>
       </div>
@@ -621,7 +673,7 @@ type BrokerMetrics struct {
           <tr><td><code>QueueDepth</code></td><td>Messages currently waiting in the ring buffer.</td></tr>
           <tr><td><code>InflightCount</code></td><td>Messages delivered but not yet acknowledged.</td></tr>
           <tr><td><code>RedeliveredCount</code></td><td>Messages requeued after an ack timeout.</td></tr>
-          <tr><td><code>DlqCount</code></td><td>Messages dead-lettered after exhausting retries.</td></tr>
+          <tr><td><code>DlqCount</code></td><td>Messages dead-lettered after exhausting retries or expiring.</td></tr>
           <tr><td><code>ConsumerSessionCount</code></td><td>Connected consumers subscribed to the queue.</td></tr>
         </tbody>
       </table>
@@ -663,8 +715,8 @@ fmt.Println(q.DlqCount)</code></pre>
             <td>Starts the broker on <code>127.0.0.1:8080</code> with the WAL at <code>./data/wal.log</code>.</td>
           </tr>
           <tr>
-            <td><code>dsend publish [--exchange &lt;name&gt;] &lt;routingKey&gt; "&lt;message&gt;"</code></td>
-            <td>Publishes a message through the named exchange under the given routing key. Defaults to the <code>default</code> exchange.</td>
+            <td><code>dsend publish [--exchange &lt;name&gt;] [--ttl &lt;duration&gt;] &lt;routingKey&gt; "&lt;message&gt;"</code></td>
+            <td>Publishes a message through the named exchange under the given routing key. Defaults to the <code>default</code> exchange. <code>--ttl</code> sets the message's time-to-live (e.g. <code>10s</code>, <code>5m</code>) and must precede the positional arguments.</td>
           </tr>
           <tr>
             <td><code>dsend subscribe [--queue &lt;name&gt;]</code></td>
@@ -759,6 +811,18 @@ fmt.Println(q.DlqCount)</code></pre>
       </div>
       <div class="code-block">
         <div class="code-block-head">
+          <span class="code-block-name">client → broker (publish with TTL)</span>
+          <button class="code-copy" data-copy>Copy</button>
+        </div>
+<pre><code>{"type":"publish","exchange":"default","routing_key":"orders","message":{"payload":"order-1042 created"},"ttl":10000000000}</code></pre>
+      </div>
+      <p class="small">
+        <code class="inline-code">ttl</code> is a <code class="inline-code">time.Duration</code> and is
+        serialized as an integer number of nanoseconds (10s = 10000000000). The broker converts it to an
+        absolute <code class="inline-code">expiry_at</code> on its own clock. Omit it for no expiry.
+      </p>
+      <div class="code-block">
+        <div class="code-block-head">
           <span class="code-block-name">client → broker (bind)</span>
           <button class="code-copy" data-copy>Copy</button>
         </div>
@@ -782,6 +846,7 @@ fmt.Println(q.DlqCount)</code></pre>
     "id": "a1b2c3d4-...",
     "payload": "order-1042 created",
     "timestamp": "2026-07-31T12:00:00Z",
+    "expiry_at": "2026-07-31T12:00:10Z",
     "retry": 0
   },
   "ack_token": "9f8e7d6c-..."
@@ -832,6 +897,7 @@ fmt.Println(q.DlqCount)</code></pre>
         <tbody>
           <tr><td><code>AckTimeout</code></td><td>100 s</td><td>How long a delivery may sit unacked before redelivery.</td></tr>
           <tr><td><code>RedeliveryInterval</code></td><td>5 s</td><td>How often expired in-flight messages are swept.</td></tr>
+          <tr><td><code>ExpiryInterval</code></td><td>1 s</td><td>How often the expiry worker sweeps queues for TTL-expired messages.</td></tr>
           <tr><td><code>MaxRetries</code></td><td>3</td><td>Redeliveries before a message is dead-lettered.</td></tr>
           <tr><td><code>QueueSize</code></td><td>20</td><td>Capacity of each queue's ring buffer.</td></tr>
           <tr><td><code>ConsumerPrefetch</code></td><td>10</td><td>Max unacknowledged deliveries a single consumer may hold in flight.</td></tr>
@@ -844,8 +910,9 @@ fmt.Println(q.DlqCount)</code></pre>
 
       <h3>Dead-letter queue</h3>
       <p>
-        Each queue has its own DLQ. Messages that exhaust their retries land there instead of being
-        dropped. The <code class="inline-code">DlqCount</code> metric tracks how many have.
+        Each queue has its own DLQ. Messages that exhaust their retries — or expire past their TTL — land
+        there instead of being dropped. The <code class="inline-code">DlqCount</code> metric tracks how many
+        have.
       </p>
 
       <h3>Persistence &amp; recovery</h3>

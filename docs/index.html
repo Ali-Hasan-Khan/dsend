@@ -89,7 +89,7 @@
       <div class="section-head center">
         <span class="eyebrow">What you get</span>
         <h2>Everything a broker needs. Nothing it doesn't.</h2>
-        <p>Eight core building blocks, implemented from scratch and exposed through a small, typed Go SDK.</p>
+        <p>Nine core building blocks, implemented from scratch and exposed through a small, typed Go SDK.</p>
       </div>
 
       <div class="feature-grid">
@@ -127,6 +127,13 @@
           </div>
           <h3>Dead-letter queue</h3>
           <p>Messages that exhaust their retries move to a per-queue DLQ instead of vanishing into the void.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2h4"/><path d="M12 14l3-3"/><circle cx="12" cy="14" r="8"/></svg>
+          </div>
+          <h3>Message expiry (TTL)</h3>
+          <p>Give a message a time-to-live at publish time. Once the TTL elapses, the message is dead-lettered before it can be delivered.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">
@@ -331,7 +338,7 @@ func main() {
           </div>
           <div>
             <dt>RedeliveredCount / DlqCount</dt>
-            <dd>requeued after ack timeout vs. dead-lettered after retries</dd>
+            <dd>requeued after ack timeout vs. dead-lettered after retries or expiry</dd>
           </div>
         </dl>
         <a class="btn btn-secondary" href="sdk.html#observability">Metrics reference</a>
