@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	ex "github.com/Ali-Hasan-Khan/dsend/internal/exchange"
 	"github.com/Ali-Hasan-Khan/dsend/internal/inflight"
@@ -108,7 +109,7 @@ func validateQueueName(name string) error {
 }
 
 func (b *InMemoryBroker) startQueue(runtime *QueueRuntime) {
-	b.wg.Add(2)
+	b.wg.Add(3)
 
 	go func() {
 		defer b.wg.Done()
@@ -117,7 +118,12 @@ func (b *InMemoryBroker) startQueue(runtime *QueueRuntime) {
 
 	go func() {
 		defer b.wg.Done()
-		runtime.StartRedeliveryWorker(b.ctx)
+		runtime.StartInflightRedeliveryWorker(b.ctx)
+	}()
+
+	go func() {
+		defer b.wg.Done()
+		runtime.StartExpiryWorker(b.ctx)
 	}()
 }
 
@@ -343,7 +349,7 @@ func (b *InMemoryBroker) queue(name string) (*QueueRuntime, error) {
 	return runtime, nil
 }
 
-func (b *InMemoryBroker) Publish(exchangeName, routingKey string, payload model.Message) error {
+func (b *InMemoryBroker) Publish(exchangeName, routingKey string, payload model.Message, ttl time.Duration) error {
 	b.mu.Lock()
 	exchange, ok := b.exchanges[exchangeName]
 	if !ok {
@@ -363,7 +369,7 @@ func (b *InMemoryBroker) Publish(exchangeName, routingKey string, payload model.
 			return err
 		}
 
-		if err := runtime.Publish(payload); err != nil {
+		if err := runtime.Publish(payload, ttl); err != nil {
 			return err
 		}
 	}

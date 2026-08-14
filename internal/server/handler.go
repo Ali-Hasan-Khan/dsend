@@ -53,7 +53,7 @@ func (s *Server) handleConnection(conn net.Conn, b engine.Broker) {
 
 		switch req.Type {
 		case protocol.PublishRequest:
-			err := b.Publish(req.Exchange, req.RoutingKey, req.Payload)
+			err := b.Publish(req.Exchange, req.RoutingKey, req.Payload, req.TTL)
 			mu.Lock()
 			encoder.Encode(protocol.Response{
 				Success: err == nil,

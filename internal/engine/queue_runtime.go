@@ -92,7 +92,7 @@ func NewQueueRuntime(
 	return runtime
 }
 
-func (q *QueueRuntime) Publish(message model.Message) error {
+func (q *QueueRuntime) Publish(message model.Message, ttl time.Duration) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -106,7 +106,12 @@ func (q *QueueRuntime) Publish(message model.Message) error {
 	if message.ID == "" {
 		message.ID = uuid.NewString()
 	}
+
 	message.Timestamp = time.Now().UTC()
+	if ttl > 0 {
+		expiryAt := message.Timestamp.Add(ttl)
+		message.ExpiryAt = &expiryAt
+	}
 	record := model.Record{
 		Type:      model.Published,
 		Queue:     q.name,
@@ -306,6 +311,11 @@ func (q *QueueRuntime) nextSession() (*session.ConsumerSession, bool) {
 func (q *QueueRuntime) reserveDelivery() (*session.ConsumerSession, model.Delivery, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+
+	if err := q.deadLetterExpiredMessages(); err != nil {
+		return nil, model.Delivery{}, false
+	}
+
 	if q.queue.Size() == 0 || len(q.consumerSessions) == 0 {
 		return nil, model.Delivery{}, false
 	}
@@ -330,6 +340,40 @@ func (q *QueueRuntime) reserveDelivery() (*session.ConsumerSession, model.Delive
 	}
 
 	return session, delivery, true
+}
+
+func (q *QueueRuntime) isExpired(message model.Message) bool {
+	return message.ExpiryAt != nil && !time.Now().Before(*message.ExpiryAt)
+}
+
+func (q *QueueRuntime) deadLetterExpiredMessages() error {
+	for q.queue.Size() > 0 {
+		message := q.queue.Peek()
+		if !q.isExpired(message) {
+			break
+		}
+
+		if err := q.wal.Append(model.Record{
+			Type:      model.DeadLettered,
+			Queue:     q.name,
+			MessageID: message.ID,
+		}); err != nil {
+			return err
+		}
+
+		q.queue.Pop()
+		q.deadLetterQueue.Push(message)
+		q.deadletteredCount++
+		q.condProd.Signal()
+	}
+
+	return nil
+}
+
+func (q *QueueRuntime) checkExpiredMessages() error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.deadLetterExpiredMessages()
 }
 
 func (q *QueueRuntime) RunDistributor(ctx context.Context) {
@@ -431,7 +475,7 @@ func (q *QueueRuntime) processExpiredMessages() {
 
 }
 
-func (q *QueueRuntime) StartRedeliveryWorker(ctx context.Context) {
+func (q *QueueRuntime) StartInflightRedeliveryWorker(ctx context.Context) {
 	ticker := time.NewTicker(q.config.RedeliveryInterval)
 	defer ticker.Stop()
 	for {
@@ -444,6 +488,25 @@ func (q *QueueRuntime) StartRedeliveryWorker(ctx context.Context) {
 				return
 			}
 			q.processExpiredMessages()
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (q *QueueRuntime) StartExpiryWorker(ctx context.Context) {
+	ticker := time.NewTicker(q.config.ExpiryInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			q.mu.Lock()
+			closed := q.closed
+			q.mu.Unlock()
+			if closed {
+				return
+			}
+			_ = q.checkExpiredMessages()
 		case <-ctx.Done():
 			return
 		}
