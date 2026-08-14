@@ -39,7 +39,7 @@ func (c *Producer) do(req protocol.Request) (*protocol.Response, error) {
 	return &resp, nil
 }
 
-func (c *Producer) Publish(ctx context.Context, exchangeName, routingKey, payload string) error {
+func (c *Producer) Publish(ctx context.Context, exchangeName, routingKey, payload string, ttl time.Duration) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -53,6 +53,7 @@ func (c *Producer) Publish(ctx context.Context, exchangeName, routingKey, payloa
 		Payload: model.Message{
 			Payload: payload,
 		},
+		TTL: ttl,
 	}
 
 	resp, err := c.do(req)

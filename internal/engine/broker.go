@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/Ali-Hasan-Khan/dsend/internal/exchange"
 	"github.com/Ali-Hasan-Khan/dsend/internal/model"
@@ -21,7 +22,7 @@ type Broker interface {
 	BindQueue(exchangeName, queueName, bindingKey string) error
 	UnbindQueue(exchangeName, queueName, bindingKey string) error
 
-	Publish(exchangeName, routingKey string, payload model.Message) error
+	Publish(exchangeName, routingKey string, payload model.Message, ttl time.Duration) error
 	Ack(token string) error
 	Subscribe(queueName string, session *session.ConsumerSession) error
 	Unsubscribe(queueName, sessionID string)

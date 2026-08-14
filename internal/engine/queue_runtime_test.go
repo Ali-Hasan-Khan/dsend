@@ -83,7 +83,7 @@ func TestPublish(t *testing.T) {
 			wal := &mockWAL{}
 			b := newTestQueueRuntime(wal)
 
-			err := b.Publish(tt.message)
+			err := b.Publish(tt.message, 0)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -140,7 +140,7 @@ func TestPublishWALFailure(t *testing.T) {
 
 			err := b.Publish(model.Message{
 				Payload: "hello",
-			})
+			}, 0)
 
 			if !errors.Is(err, tt.err) {
 				t.Fatalf("expected %v got %v", tt.err, err)
@@ -167,7 +167,7 @@ func TestPublishSetsCurrentTimestamp(t *testing.T) {
 
 	err := b.Publish(model.Message{
 		Payload: "hello",
-	})
+	}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,6 +178,225 @@ func TestPublishSetsCurrentTimestamp(t *testing.T) {
 
 	if ts.Before(before) || ts.After(after) {
 		t.Fatalf("timestamp %v not between %v and %v", ts, before, after)
+	}
+}
+
+func TestPublishWithTTLSetsExpiryAt(t *testing.T) {
+	wal := &mockWAL{}
+	b := newTestQueueRuntime(wal)
+
+	before := time.Now()
+
+	err := b.Publish(model.Message{
+		Payload: "hello",
+	}, 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	record := wal.records[0].Message
+	if record.ExpiryAt == nil {
+		t.Fatal("expected ExpiryAt to be set")
+	}
+	if got := record.ExpiryAt.Sub(record.Timestamp); got != 2*time.Second {
+		t.Fatalf("expected ExpiryAt - Timestamp = 2s, got %v", got)
+	}
+	if record.Timestamp.Before(before) {
+		t.Fatalf("timestamp %v before publish start %v", record.Timestamp, before)
+	}
+}
+
+func TestExpiredMessageDeadLetteredBeforeDelivery(t *testing.T) {
+	queue := newIntegrationQueueRuntime(10)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go queue.RunDistributor(ctx)
+
+	consumer := session.NewConsumerSession("consumer-1")
+	queue.Subscribe(consumer)
+
+	expired := time.Now().Add(-time.Second)
+	if err := queue.Publish(model.Message{
+		ID:       "expired-1",
+		Payload:  "stale",
+		ExpiryAt: &expired,
+	}, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		metrics := queue.Metrics()
+		if metrics.DlqCount == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expired message was not dead-lettered: %+v", metrics)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	select {
+	case delivery := <-consumer.Deliveries:
+		t.Fatalf("expired message should not be delivered, got %+v", delivery)
+	default:
+	}
+}
+
+func TestNonExpiredMessageDelivered(t *testing.T) {
+	queue := newIntegrationQueueRuntime(10)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go queue.RunDistributor(ctx)
+
+	consumer := session.NewConsumerSession("consumer-1")
+	queue.Subscribe(consumer)
+
+	future := time.Now().Add(time.Hour)
+	if err := queue.Publish(model.Message{
+		ID:       "fresh-1",
+		Payload:  "fresh",
+		ExpiryAt: &future,
+	}, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case delivery := <-consumer.Deliveries:
+		if delivery.ID != "fresh-1" {
+			t.Fatalf("expected id=fresh-1 got=%s", delivery.ID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("consumer did not receive non-expired message")
+	}
+}
+
+func TestCheckExpiredMessagesReturnsOnWALFailure(t *testing.T) {
+	wal := &mockWAL{}
+	b := newTestQueueRuntime(wal)
+
+	expired := time.Now().Add(-time.Second)
+	if err := b.Publish(model.Message{
+		ID:       "stale-1",
+		Payload:  "stale",
+		ExpiryAt: &expired,
+	}, 0); err != nil {
+		t.Fatal(err)
+	}
+	wal.appendErr = errors.New("wal append failed")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- b.checkExpiredMessages()
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected WAL append error")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("checkExpiredMessages did not return on WAL failure")
+	}
+
+	metrics := b.Metrics()
+	if metrics.DlqCount != 0 {
+		t.Fatalf("expected no dead-letter on WAL failure, got DlqCount=%d", metrics.DlqCount)
+	}
+	if metrics.QueueDepth != 1 {
+		t.Fatalf("expected message to remain queued, got depth %d", metrics.QueueDepth)
+	}
+}
+
+func TestExpiryWorkerRetriesAfterWALFailure(t *testing.T) {
+	wal := &mockWAL{}
+	cfg := DefaultConfig()
+	cfg.QueueSize = 10
+	cfg.ExpiryInterval = 50 * time.Millisecond
+
+	queue := NewQueueRuntime(
+		model.DefaultQueueName,
+		cfg,
+		nil,
+		wal,
+		queue.NewRingBufferQueue(cfg.QueueSize),
+		queue.NewDLQ(),
+		inflight.NewManager(),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go queue.StartExpiryWorker(ctx)
+
+	expired := time.Now().Add(-time.Second)
+	if err := queue.Publish(model.Message{
+		ID:       "stale-1",
+		Payload:  "stale",
+		ExpiryAt: &expired,
+	}, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	wal.mu.Lock()
+	wal.appendErr = errors.New("wal append failed")
+	wal.mu.Unlock()
+
+	time.Sleep(150 * time.Millisecond)
+
+	if metrics := queue.Metrics(); metrics.DlqCount != 0 {
+		t.Fatalf("message should not be dead-lettered while WAL is down, got DlqCount=%d", metrics.DlqCount)
+	}
+
+	wal.mu.Lock()
+	wal.appendErr = nil
+	wal.mu.Unlock()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		metrics := queue.Metrics()
+		if metrics.DlqCount == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expiry worker did not dead-letter after WAL recovered: %+v", metrics)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestExpiryWorkerDeadLettersExpiredMessages(t *testing.T) {
+	queue := newIntegrationQueueRuntime(10)
+	queue.config.ExpiryInterval = 50 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go queue.StartExpiryWorker(ctx)
+
+	expired := time.Now().Add(-time.Second)
+	if err := queue.Publish(model.Message{
+		ID:       "expired-1",
+		Payload:  "stale",
+		ExpiryAt: &expired,
+	}, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		metrics := queue.Metrics()
+		if metrics.DlqCount == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expiry worker did not dead-letter message: %+v", metrics)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -234,7 +453,7 @@ func TestSubscribeReceivesPublishedMessages(t *testing.T) {
 	err := queue.Publish(model.Message{
 		ID:      "1",
 		Payload: "hello",
-	})
+	}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +497,7 @@ func TestUnsubscribeStopsDeliveries(t *testing.T) {
 
 	err := queue.Publish(model.Message{
 		ID: "1",
-	})
+	}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +626,7 @@ func TestRoundRobinAfterConsumerLeaves(t *testing.T) {
 		if err := queue.Publish(model.Message{
 			ID:      fmt.Sprintf("%d", i),
 			Payload: fmt.Sprintf("msg-%d", i),
-		}); err != nil {
+		}, 0); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -567,7 +786,7 @@ func TestAckPreventsRedelivery(t *testing.T) {
 	defer cancel()
 
 	go queue.RunDistributor(ctx)
-	go queue.StartRedeliveryWorker(ctx)
+	go queue.StartInflightRedeliveryWorker(ctx)
 
 	consumer := session.NewConsumerSession("consumer")
 
@@ -576,7 +795,7 @@ func TestAckPreventsRedelivery(t *testing.T) {
 	err := queue.Publish(model.Message{
 		ID:      "msg-1",
 		Payload: "hello",
-	})
+	}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -630,7 +849,7 @@ func TestMessageIsRedelivered(t *testing.T) {
 	defer cancel()
 
 	go queue.RunDistributor(ctx)
-	go queue.StartRedeliveryWorker(ctx)
+	go queue.StartInflightRedeliveryWorker(ctx)
 
 	consumer := session.NewConsumerSession("consumer")
 
@@ -639,7 +858,7 @@ func TestMessageIsRedelivered(t *testing.T) {
 	err := queue.Publish(model.Message{
 		ID:      "msg-1",
 		Payload: "hello",
-	})
+	}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -722,7 +941,7 @@ func TestMessageMovesToDLQAfterMaxRetries(t *testing.T) {
 	defer cancel()
 
 	go queue.RunDistributor(ctx)
-	go queue.StartRedeliveryWorker(ctx)
+	go queue.StartInflightRedeliveryWorker(ctx)
 
 	consumer := session.NewConsumerSession("consumer")
 
@@ -731,7 +950,7 @@ func TestMessageMovesToDLQAfterMaxRetries(t *testing.T) {
 	err := queue.Publish(model.Message{
 		ID:      "msg-1",
 		Payload: "hello",
-	})
+	}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -828,7 +1047,7 @@ func TestShutdownRejectsNewPublishes(t *testing.T) {
 
 	err := queue.Publish(model.Message{
 		ID: "1",
-	})
+	}, 0)
 
 	if !errors.Is(err, ErrBrokerClosed) {
 		t.Fatalf("expected ErrBrokerClosed got %v", err)
@@ -851,7 +1070,7 @@ func TestShutdownUnblocksBlockedPublisher(t *testing.T) {
 
 	err := queue.Publish(model.Message{
 		ID: "1",
-	})
+	}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -861,7 +1080,7 @@ func TestShutdownUnblocksBlockedPublisher(t *testing.T) {
 	go func() {
 		errCh <- queue.Publish(model.Message{
 			ID: "2",
-		})
+		}, 0)
 	}()
 
 	time.Sleep(100 * time.Millisecond)
@@ -927,7 +1146,7 @@ func TestShutdownIsIdempotent(t *testing.T) {
 	// Should not panic.
 	queue.Shutdown()
 
-	err := queue.Publish(model.Message{})
+	err := queue.Publish(model.Message{}, 0)
 
 	if !errors.Is(err, ErrBrokerClosed) {
 		t.Fatalf("expected ErrBrokerClosed got %v", err)
@@ -1122,7 +1341,7 @@ func TestConsumerPrefetchLimitsOutstandingDeliveries(t *testing.T) {
 	}
 
 	for i := 0; i < 5; i++ {
-		if err := queue.Publish(model.Message{Payload: fmt.Sprintf("msg-%d", i)}); err != nil {
+		if err := queue.Publish(model.Message{Payload: fmt.Sprintf("msg-%d", i)}, 0); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1222,7 +1441,7 @@ func TestConsumerPrefetchSkipsFullConsumer(t *testing.T) {
 	}
 
 	for i := 0; i < 3; i++ {
-		if err := queue.Publish(model.Message{Payload: fmt.Sprintf("msg-%d", i)}); err != nil {
+		if err := queue.Publish(model.Message{Payload: fmt.Sprintf("msg-%d", i)}, 0); err != nil {
 			t.Fatal(err)
 		}
 	}

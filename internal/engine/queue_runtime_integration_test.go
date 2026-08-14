@@ -81,7 +81,7 @@ func TestQueueRuntimePublishConsumeAck(t *testing.T) {
 			for i := 0; i < messagesPerProducer; i++ {
 				err := queue.Publish(model.Message{
 					Payload: fmt.Sprintf("producer-%d-msg-%d", id, i),
-				})
+				}, 0)
 
 				if err != nil {
 					t.Errorf("publish failed: %v", err)
@@ -208,7 +208,7 @@ func TestQueueRuntimeRoundRobinConsumers(t *testing.T) {
 	for i := 0; i < totalMessages; i++ {
 		if err := queue.Publish(model.Message{
 			Payload: fmt.Sprintf("%d", i),
-		}); err != nil {
+		}, 0); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -309,7 +309,7 @@ func TestQueueRuntimeStress(t *testing.T) {
 						id,
 						i,
 					),
-				})
+				}, 0)
 
 				if err != nil {
 					t.Errorf("publish failed: %v", err)

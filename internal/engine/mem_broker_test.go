@@ -50,6 +50,25 @@ func receiveDelivery(t *testing.T, consumer *session.ConsumerSession) model.Deli
 	}
 }
 
+func TestBrokerPublishWithTTLSetsExpiryAt(t *testing.T) {
+	broker := newMultiQueueBroker(t)
+
+	if err := broker.BindQueue(model.DefaultExchangeName, model.DefaultQueueName, model.DefaultQueueName); err != nil {
+		t.Fatal(err)
+	}
+	if err := broker.Publish(model.DefaultExchangeName, model.DefaultQueueName, model.Message{Payload: "hello"}, time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	msg := broker.queues[model.DefaultQueueName].queue.Peek()
+	if msg.ExpiryAt == nil {
+		t.Fatal("expected ExpiryAt to be set through the broker path")
+	}
+	if got := msg.ExpiryAt.Sub(msg.Timestamp); got != time.Second {
+		t.Fatalf("expected ExpiryAt - Timestamp = 1s, got %v", got)
+	}
+}
+
 func TestInMemoryBrokerQueueLifecycle(t *testing.T) {
 	broker := newMultiQueueBroker(t)
 
@@ -105,10 +124,10 @@ func TestInMemoryBrokerRoutesMessagesToTheirQueue(t *testing.T) {
 		t.Fatalf("subscribe payments: %v", err)
 	}
 
-	if err := broker.Publish(model.DefaultExchangeName, "orders", model.Message{Payload: "order-1"}); err != nil {
+	if err := broker.Publish(model.DefaultExchangeName, "orders", model.Message{Payload: "order-1"}, 0); err != nil {
 		t.Fatalf("publish orders: %v", err)
 	}
-	if err := broker.Publish(model.DefaultExchangeName, "payments", model.Message{Payload: "payment-1"}); err != nil {
+	if err := broker.Publish(model.DefaultExchangeName, "payments", model.Message{Payload: "payment-1"}, 0); err != nil {
 		t.Fatalf("publish payments: %v", err)
 	}
 
@@ -149,7 +168,7 @@ func TestInMemoryBrokerRejectsDeletingNonEmptyQueue(t *testing.T) {
 	if err := broker.BindQueue(model.DefaultExchangeName, "orders", "orders"); err != nil {
 		t.Fatalf("bind queue: %v", err)
 	}
-	if err := broker.Publish(model.DefaultExchangeName, "orders", model.Message{Payload: "order-1"}); err != nil {
+	if err := broker.Publish(model.DefaultExchangeName, "orders", model.Message{Payload: "order-1"}, 0); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 
@@ -278,7 +297,7 @@ func TestInMemoryBrokerUnbindQueueStopsRouting(t *testing.T) {
 		t.Fatalf("subscribe: %v", err)
 	}
 
-	if err := broker.Publish("events", "orders", model.Message{Payload: "m1"}); err != nil {
+	if err := broker.Publish("events", "orders", model.Message{Payload: "m1"}, 0); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 	if d := receiveDelivery(t, consumer); d.Payload != "m1" {
@@ -289,7 +308,7 @@ func TestInMemoryBrokerUnbindQueueStopsRouting(t *testing.T) {
 		t.Fatalf("unbind: %v", err)
 	}
 
-	if err := broker.Publish("events", "orders", model.Message{Payload: "m2"}); !errors.Is(err, ErrNoRoute) {
+	if err := broker.Publish("events", "orders", model.Message{Payload: "m2"}, 0); !errors.Is(err, ErrNoRoute) {
 		t.Fatalf("expected ErrNoRoute after unbind, got %v", err)
 	}
 
@@ -319,7 +338,7 @@ func TestInMemoryBrokerDirectRouting(t *testing.T) {
 		t.Fatalf("subscribe: %v", err)
 	}
 
-	if err := broker.Publish("orders-ex", "orders", model.Message{Payload: "order-1"}); err != nil {
+	if err := broker.Publish("orders-ex", "orders", model.Message{Payload: "order-1"}, 0); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 
@@ -340,10 +359,10 @@ func TestInMemoryBrokerDirectRouting(t *testing.T) {
 		t.Fatalf("unexpected metrics: %+v", metric)
 	}
 
-	if err := broker.Publish("orders-ex", "payments", model.Message{Payload: "x"}); !errors.Is(err, ErrNoRoute) {
+	if err := broker.Publish("orders-ex", "payments", model.Message{Payload: "x"}, 0); !errors.Is(err, ErrNoRoute) {
 		t.Fatalf("expected ErrNoRoute, got %v", err)
 	}
-	if err := broker.Publish("missing-ex", "orders", model.Message{Payload: "x"}); !errors.Is(err, ErrExchangeNotFound) {
+	if err := broker.Publish("missing-ex", "orders", model.Message{Payload: "x"}, 0); !errors.Is(err, ErrExchangeNotFound) {
 		t.Fatalf("expected ErrExchangeNotFound, got %v", err)
 	}
 }
@@ -369,7 +388,7 @@ func TestInMemoryBrokerFanoutPublishesToAllBoundQueues(t *testing.T) {
 		}
 	}
 
-	if err := broker.Publish("broadcast", "any-key", model.Message{Payload: "broadcast-1"}); err != nil {
+	if err := broker.Publish("broadcast", "any-key", model.Message{Payload: "broadcast-1"}, 0); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 
@@ -411,7 +430,7 @@ func TestInMemoryBrokerTopicRouting(t *testing.T) {
 		}
 	}
 
-	if err := broker.Publish("topics", "orders.created", model.Message{Payload: "order-event"}); err != nil {
+	if err := broker.Publish("topics", "orders.created", model.Message{Payload: "order-event"}, 0); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 	for _, q := range []string{"orders-queue", "orders-all"} {
@@ -421,7 +440,7 @@ func TestInMemoryBrokerTopicRouting(t *testing.T) {
 	}
 	assertNoDelivery(t, consumers["payments-queue"])
 
-	if err := broker.Publish("topics", "orders", model.Message{Payload: "bare-order"}); err != nil {
+	if err := broker.Publish("topics", "orders", model.Message{Payload: "bare-order"}, 0); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 	if d := receiveDelivery(t, consumers["orders-all"]); d.Payload != "bare-order" {
@@ -429,7 +448,7 @@ func TestInMemoryBrokerTopicRouting(t *testing.T) {
 	}
 	assertNoDelivery(t, consumers["orders-queue"])
 
-	if err := broker.Publish("topics", "payments.received", model.Message{Payload: "payment-event"}); err != nil {
+	if err := broker.Publish("topics", "payments.received", model.Message{Payload: "payment-event"}, 0); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 	if d := receiveDelivery(t, consumers["payments-queue"]); d.Payload != "payment-event" {
@@ -512,7 +531,7 @@ func TestInMemoryBrokerRecoversExchangesAndBindings(t *testing.T) {
 	if err := broker.BindQueue("events", "orders", "orders"); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
-	if err := broker.Publish("events", "orders", model.Message{Payload: "order-1"}); err != nil {
+	if err := broker.Publish("events", "orders", model.Message{Payload: "order-1"}, 0); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 	broker.Shutdown()
@@ -527,7 +546,7 @@ func TestInMemoryBrokerRecoversExchangesAndBindings(t *testing.T) {
 		t.Fatalf("exchanges after restart = %v, want to contain events", broker2.ListExchanges())
 	}
 
-	if err := broker2.Publish("events", "orders", model.Message{Payload: "order-2"}); err != nil {
+	if err := broker2.Publish("events", "orders", model.Message{Payload: "order-2"}, 0); err != nil {
 		t.Fatalf("publish after restart: %v", err)
 	}
 
@@ -558,7 +577,7 @@ func TestInMemoryBrokerRestartsWithDefaultExchangeBinding(t *testing.T) {
 	}
 	defer broker2.Shutdown()
 
-	if err := broker2.Publish(model.DefaultExchangeName, model.DefaultQueueName, model.Message{Payload: "hello"}); err != nil {
+	if err := broker2.Publish(model.DefaultExchangeName, model.DefaultQueueName, model.Message{Payload: "hello"}, 0); err != nil {
 		t.Fatalf("publish to default exchange: %v", err)
 	}
 }
@@ -594,7 +613,7 @@ func TestInMemoryBrokerRestartsAfterDeletingBoundQueue(t *testing.T) {
 	}
 	defer broker2.Shutdown()
 
-	if err := broker2.Publish("events", "orders", model.Message{Payload: "x"}); !errors.Is(err, ErrNoRoute) {
+	if err := broker2.Publish("events", "orders", model.Message{Payload: "x"}, 0); !errors.Is(err, ErrNoRoute) {
 		t.Fatalf("expected ErrNoRoute after queue deletion, got %v", err)
 	}
 }
