@@ -7,6 +7,32 @@ DSend is a lightweight **queue-based distributed message broker** written from s
 
 ---
 
+## Contents
+
+- [Why DSend?](#why-dsend)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Install](#install)
+- [Build](#build)
+- [Running the Broker](#running-the-broker)
+- [Named Queues](#named-queues)
+- [Exchanges](#exchanges)
+- [Publishing Messages](#publishing-messages)
+- [Consuming Messages](#consuming-messages)
+- [Consumer Backpressure](#consumer-backpressure)
+- [Message Expiry](#message-expiry)
+- [Broker Metrics](#broker-metrics)
+- [Running Tests](#running-tests)
+- [Development](#development)
+- [Continuous Integration & Releases](#continuous-integration--releases)
+- [Current Capabilities](#current-capabilities)
+- [Tech Stack](#tech-stack)
+- [License](#license)
+
+---
+
 ## Why DSend?
 
 Most production message brokers abstract away the complexity of reliable messaging. DSend was built to understand how those systems work internally by implementing the core building blocks from scratch instead of relying on existing libraries or brokers.
@@ -30,6 +56,7 @@ The project focuses on correctness, simplicity, and learning while providing a s
 - At-least-once delivery semantics
 - Message acknowledgements (ACK)
 - Automatic message redelivery
+- Per-message TTL / message expiry
 - Dead Letter Queue (DLQ)
 - Graceful shutdown
 - Broker metrics
@@ -91,6 +118,28 @@ Clone the repository:
 ```bash
 git clone https://github.com/Ali-Hasan-Khan/dsend.git
 cd dsend
+```
+
+---
+
+## Install
+
+Install the `dsend` CLI binary directly:
+
+```bash
+go install github.com/Ali-Hasan-Khan/dsend/cmd/dsend@latest
+```
+
+Add the Go SDK as a dependency to your project:
+
+```bash
+go get github.com/Ali-Hasan-Khan/dsend
+```
+
+Then import it:
+
+```go
+import "github.com/Ali-Hasan-Khan/dsend/client"
 ```
 
 ---
@@ -270,6 +319,37 @@ to let faster consumers buffer more messages.
 
 ---
 
+## Message Expiry
+
+Messages can be given a **time-to-live (TTL)** at publish time. A message whose
+TTL has elapsed is considered expired and is dead-lettered before it can be
+delivered — it is moved to the queue's DLQ and reflected in `DlqCount`.
+
+Publish a message that expires after 10 seconds:
+
+```bash
+./dsend publish --exchange default --ttl 10s orders "Hello, DSend!"
+```
+
+`--ttl` accepts Go duration strings (`10s`, `5m`, `1h30m`) and must be given
+before the `<routingKey>` and `<payload>` arguments. Messages published without
+`--ttl` never expire.
+
+Expiry is anchored to the **broker's clock**: when a message is accepted, the
+broker computes `ExpiryAt = now + ttl`. Expiry is enforced at delivery time, so
+an expired message is never handed to a consumer, and a dedicated expiry worker
+sweeps every queue on a timer (`ExpiryInterval`, default 1s), clearing expired
+messages even when no consumer is connected or the broker is otherwise idle.
+
+The Go SDK exposes the same capability — pass a `time.Duration` as the final
+argument to `Producer.Publish` (or `0` for no expiry):
+
+```go
+err := p.Publish(ctx, "default", "orders", "order-1042 created", 10*time.Second)
+```
+
+---
+
 ## Broker Metrics
 
 ### Linux / macOS
@@ -386,6 +466,7 @@ GitHub Actions is configured in [`.github/workflows`](.github/workflows):
 - ACK-based message processing
 - Automatic retry on ACK timeout
 - Dead Letter Queue (DLQ)
+- Per-message TTL / message expiry
 - Round-robin consumer load balancing
 - Consumer prefetch & backpressure
 - Persistent storage using Write-Ahead Logging
