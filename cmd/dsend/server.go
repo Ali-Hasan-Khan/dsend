@@ -17,6 +17,8 @@ func runServer(args []string) error {
 	if err != nil {
 		return err
 	}
+	defer wal.Close()
+
 	cfg := engine.DefaultConfig()
 	broker, err := engine.NewBroker(cfg, wal)
 	if err != nil {

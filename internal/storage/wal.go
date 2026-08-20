@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 
 	"github.com/Ali-Hasan-Khan/dsend/internal/model"
 )
@@ -15,6 +16,7 @@ import (
 type WAL interface {
 	Append(record model.Record) error
 	Load() (RecoveredState, error)
+	Close() error
 }
 
 type ExchangeState struct {
@@ -27,8 +29,19 @@ type RecoveredState struct {
 	PendingExchanges map[string]*ExchangeState
 }
 
+type appendRequest struct {
+	record model.Record
+	result chan error
+}
+
 type FileWAL struct {
 	path string
+	file *os.File
+
+	closed   bool
+	wg       sync.WaitGroup
+	mu       sync.Mutex
+	appendCh chan appendRequest
 }
 
 func NewFileWAL(path string) (*FileWAL, error) {
@@ -41,28 +54,70 @@ func NewFileWAL(path string) (*FileWAL, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize WAL file: %w", err)
 	}
-	file.Close()
 
-	return &FileWAL{path: path}, nil
+	wal := &FileWAL{
+		path:     path,
+		file:     file,
+		appendCh: make(chan appendRequest),
+	}
+
+	wal.wg.Add(1)
+	go wal.runWriter()
+
+	return wal, nil
 }
 
-func (f *FileWAL) Append(record model.Record) error {
+func (f *FileWAL) writeRecord(record model.Record) error {
 	data, err := json.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("error marshalling data: %w", err)
 	}
 
-	file, err := os.OpenFile(f.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("error opening file: %w", err)
-	}
-	defer file.Close()
+	data = append(data, '\n')
 
-	_, err = file.Write(append(data, '\n'))
+	n, err := f.file.Write(data)
 	if err != nil {
-		return fmt.Errorf("error appending to file: %w", err)
+		return fmt.Errorf("failed to write record to WAL file: %w", err)
 	}
+
+	if n != len(data) {
+		return io.ErrShortWrite
+	}
+
+	if err := f.file.Sync(); err != nil {
+		return fmt.Errorf("failed to sync WAL file to disk: %w", err)
+	}
+
 	return nil
+}
+
+func (f *FileWAL) runWriter() {
+	defer f.wg.Done()
+
+	for req := range f.appendCh {
+		err := f.writeRecord(req.record)
+		req.result <- err
+	}
+}
+
+func (f *FileWAL) Append(record model.Record) error {
+	result := make(chan error, 1)
+
+	req := appendRequest{
+		record: record,
+		result: result,
+	}
+
+	f.mu.Lock()
+	if f.closed {
+		f.mu.Unlock()
+		return errors.New("WAL closed")
+	}
+
+	f.appendCh <- req
+	f.mu.Unlock()
+
+	return <-result
 }
 
 func removeMessage(messages []model.Message, messageID string) []model.Message {
@@ -173,4 +228,20 @@ func (f *FileWAL) Load() (RecoveredState, error) {
 	}
 
 	return state, nil
+}
+
+func (f *FileWAL) Close() error {
+	f.mu.Lock()
+	if f.closed {
+		f.mu.Unlock()
+		return nil
+	}
+
+	f.closed = true
+	close(f.appendCh)
+	f.mu.Unlock()
+
+	f.wg.Wait()
+
+	return f.file.Close()
 }

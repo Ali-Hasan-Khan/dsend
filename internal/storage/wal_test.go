@@ -1,9 +1,11 @@
 package storage
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -42,10 +44,11 @@ func TestNewFileWALCreatesFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "wal.log")
 
-	_, err := NewFileWAL(path)
+	wal, err := NewFileWAL(path)
 	if err != nil {
 		t.Fatalf("failed to create WAL: %v", err)
 	}
+	defer wal.Close()
 }
 
 func TestLoadEmptyWAL(t *testing.T) {
@@ -56,6 +59,7 @@ func TestLoadEmptyWAL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer wal.Close()
 
 	state, err := wal.Load()
 	if err != nil {
@@ -75,6 +79,7 @@ func TestAppendSingleMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer wal.Close()
 
 	msg := newMessage("1", "hello")
 
@@ -109,6 +114,7 @@ func TestAppendMultipleMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer wal.Close()
 
 	tests := []model.Message{
 		newMessage("1", "hello"),
@@ -161,6 +167,7 @@ func TestRecoveryAfterRestart(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer wal.Close()
 
 		if err := wal.Append(published(model.DefaultQueueName, newMessage("1", "hello"))); err != nil {
 			t.Fatal(err)
@@ -176,6 +183,7 @@ func TestRecoveryAfterRestart(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer wal.Close()
 
 		state, err := wal.Load()
 		if err != nil {
@@ -205,6 +213,7 @@ func TestAppendPreservesOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer wal.Close()
 
 	for i := 0; i < 100; i++ {
 		msg := newMessage(string(rune(i)), "payload")
@@ -256,6 +265,7 @@ func TestLoadCorruptedWAL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer wal.Close()
 
 	_, err = wal.Load()
 
@@ -279,6 +289,7 @@ func TestLoadRecoversExchangesAndBindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer wal.Close()
 
 	appendRecords(t, wal,
 		model.Record{Type: model.ExchangeCreated, Exchange: "events", ExchangeType: "direct"},
@@ -313,6 +324,7 @@ func TestLoadRemovesUnboundBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer wal.Close()
 
 	appendRecords(t, wal,
 		model.Record{Type: model.ExchangeCreated, Exchange: "events", ExchangeType: "direct"},
@@ -337,6 +349,7 @@ func TestLoadUnbindAllForQueue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer wal.Close()
 
 	appendRecords(t, wal,
 		model.Record{Type: model.ExchangeCreated, Exchange: "events", ExchangeType: "direct"},
@@ -362,6 +375,7 @@ func TestLoadRebindAfterUnbind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer wal.Close()
 
 	appendRecords(t, wal,
 		model.Record{Type: model.ExchangeCreated, Exchange: "events", ExchangeType: "direct"},
@@ -386,6 +400,7 @@ func TestLoadRemovesDeletedExchange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer wal.Close()
 
 	appendRecords(t, wal,
 		model.Record{Type: model.ExchangeCreated, Exchange: "events", ExchangeType: "direct"},
@@ -407,6 +422,7 @@ func TestLoadSkipsBindingsForUnknownExchange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer wal.Close()
 
 	// The default exchange binding is appended to the WAL on every startup,
 	// but "default" never has an ExchangeCreated record. Load must skip it,
@@ -423,5 +439,62 @@ func TestLoadSkipsBindingsForUnknownExchange(t *testing.T) {
 
 	if len(state.PendingExchanges) != 0 {
 		t.Fatalf("expected no exchanges, got %v", state.PendingExchanges)
+	}
+}
+
+func TestAppendAfterCloseReturnsError(t *testing.T) {
+	wal, err := NewFileWAL(filepath.Join(t.TempDir(), "wal.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wal.Close()
+
+	err = wal.Append(published(model.DefaultQueueName, newMessage("1", "hello")))
+	if err == nil {
+		t.Fatal("expected error on Append after Close")
+	}
+	if err.Error() != "WAL closed" {
+		t.Fatalf("expected %q, got %q", "WAL closed", err.Error())
+	}
+}
+
+func TestConcurrentAppend(t *testing.T) {
+	wal, err := NewFileWAL(filepath.Join(t.TempDir(), "wal.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wal.Close()
+
+	const goroutines = 10
+	const perGoroutine = 100
+	total := goroutines * perGoroutine
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for g := range goroutines {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < perGoroutine; i++ {
+				id := fmt.Sprintf("%d-%d", g, i)
+				msg := newMessage(id, "payload")
+				if err := wal.Append(published(model.DefaultQueueName, msg)); err != nil {
+					t.Errorf("goroutine %d: Append failed: %v", g, err)
+					return
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	state, err := wal.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	messages := recoveredMessages(t, state, model.DefaultQueueName)
+	if len(messages) != total {
+		t.Fatalf("expected %d messages, got %d", total, len(messages))
 	}
 }
