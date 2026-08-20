@@ -37,6 +37,10 @@ func (m *mockWAL) Load() (storage.RecoveredState, error) {
 	return storage.RecoveredState{}, nil
 }
 
+func (m *mockWAL) Close() error {
+	return nil
+}
+
 func newTestQueueRuntime(wal *mockWAL) *QueueRuntime {
 	cfg := DefaultConfig()
 	cfg.QueueSize = 10
