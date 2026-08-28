@@ -4,22 +4,29 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"sync"
 
 	"github.com/Ali-Hasan-Khan/dsend/internal/engine"
 )
 
+type Logger interface {
+	Infof(format string, args ...any)
+	Warnf(format string, args ...any)
+	Errorf(format string, args ...any)
+}
+
 type Server struct {
 	listenAddr string
 	broker     engine.Broker
+	logger     Logger
 }
 
-func New(listenAddr string, broker engine.Broker) *Server {
+func New(listenAddr string, broker engine.Broker, log Logger) *Server {
 	return &Server{
 		listenAddr: listenAddr,
 		broker:     broker,
+		logger:     log,
 	}
 }
 
@@ -29,13 +36,13 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("Failed to start server: %v", err)
 	}
 
-	log.Printf("TCP server running on port %v....", s.listenAddr)
+	s.logger.Infof("TCP server running on port %v....", s.listenAddr)
 
 	var wg sync.WaitGroup
 
 	go func() {
 		<-ctx.Done()
-		log.Println("Shutting down TCP server gracefully...")
+		s.logger.Infof("Shutting down TCP server gracefully...")
 		listener.Close()
 	}()
 
@@ -45,7 +52,7 @@ func (s *Server) Start(ctx context.Context) error {
 			if errors.Is(err, net.ErrClosed) {
 				break // Exit the loop safely
 			}
-			log.Printf("Failed to accept connection: %v", err)
+			s.logger.Warnf("Failed to accept connection: %v", err)
 			continue
 		}
 
@@ -56,8 +63,8 @@ func (s *Server) Start(ctx context.Context) error {
 		}(conn)
 	}
 
-	log.Println("Waiting for All clients to finish...")
+	s.logger.Infof("Waiting for All clients to finish...")
 	wg.Wait()
-	log.Println("Server stopped safely.")
+	s.logger.Infof("Server stopped safely.")
 	return nil
 }
