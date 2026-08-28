@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"io"
-	"log"
 	"net"
 	"sync"
 
@@ -23,7 +22,7 @@ func errorString(err error) string {
 func (s *Server) handleConnection(conn net.Conn, b engine.Broker) {
 	defer conn.Close()
 	clientAddr := conn.RemoteAddr().String()
-	log.Printf("New client connected from: %s", clientAddr)
+	s.logger.Infof("New client connected from: %s", clientAddr)
 
 	var mu sync.Mutex
 	var stopSubscribe chan struct{}
@@ -42,14 +41,12 @@ func (s *Server) handleConnection(conn net.Conn, b engine.Broker) {
 		var req protocol.Request
 		if err := decoder.Decode(&req); err != nil {
 			if err == io.EOF {
-				log.Printf("Client disconnected: %v", err)
+				s.logger.Infof("Client disconnected: %v", err)
 				return
 			}
-			log.Printf("Error decoding JSON from %s: %v", clientAddr, err)
+			s.logger.Errorf("Error decoding JSON from %s: %v", clientAddr, err)
 			return
 		}
-
-		log.Printf("[%s] Received request type: %s", clientAddr, req.Type)
 
 		switch req.Type {
 		case protocol.PublishRequest:
