@@ -26,7 +26,7 @@ func newMultiQueueBroker(t *testing.T) *InMemoryBroker {
 		&mockWAL{},
 		make(map[string]*QueueRuntime),
 		make(map[string]*QueueRuntime),
-		nil,
+		&mockLogger{},
 	)
 	broker.queues[model.DefaultQueueName] = broker.newQueueRuntime(
 		model.DefaultQueueName,
