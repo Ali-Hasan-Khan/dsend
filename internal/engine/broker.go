@@ -11,6 +11,12 @@ import (
 	"github.com/Ali-Hasan-Khan/dsend/internal/storage"
 )
 
+type Logger interface {
+	Infof(format string, args ...any)
+	Warnf(format string, args ...any)
+	Errorf(format string, args ...any)
+}
+
 type Broker interface {
 	CreateExchange(name string, exchangeType string) error
 	DeleteExchange(name string) error
@@ -34,7 +40,7 @@ type Broker interface {
 	Shutdown()
 }
 
-func NewBroker(cfg Config, wal storage.WAL) (Broker, error) {
+func NewBroker(cfg Config, wal storage.WAL, log Logger) (Broker, error) {
 	state, err := wal.Load()
 	if err != nil {
 		return nil, err
@@ -45,6 +51,7 @@ func NewBroker(cfg Config, wal storage.WAL) (Broker, error) {
 		wal,
 		make(map[string]*QueueRuntime),
 		make(map[string]*QueueRuntime),
+		log,
 	)
 
 	for queueName, messages := range state.PendingMessages {

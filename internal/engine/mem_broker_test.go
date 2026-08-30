@@ -26,6 +26,7 @@ func newMultiQueueBroker(t *testing.T) *InMemoryBroker {
 		&mockWAL{},
 		make(map[string]*QueueRuntime),
 		make(map[string]*QueueRuntime),
+		nil,
 	)
 	broker.queues[model.DefaultQueueName] = broker.newQueueRuntime(
 		model.DefaultQueueName,
@@ -517,7 +518,7 @@ func TestInMemoryBrokerRecoversExchangesAndBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	broker, err := NewBroker(DefaultConfig(), wal)
+	broker, err := NewBroker(DefaultConfig(), wal, nil)
 	if err != nil {
 		t.Fatalf("first start: %v", err)
 	}
@@ -536,7 +537,7 @@ func TestInMemoryBrokerRecoversExchangesAndBindings(t *testing.T) {
 	}
 	broker.Shutdown()
 
-	broker2, err := NewBroker(DefaultConfig(), wal)
+	broker2, err := NewBroker(DefaultConfig(), wal, nil)
 	if err != nil {
 		t.Fatalf("restart: %v", err)
 	}
@@ -565,13 +566,13 @@ func TestInMemoryBrokerRestartsWithDefaultExchangeBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	broker, err := NewBroker(DefaultConfig(), wal)
+	broker, err := NewBroker(DefaultConfig(), wal, nil)
 	if err != nil {
 		t.Fatalf("first start: %v", err)
 	}
 	broker.Shutdown()
 
-	broker2, err := NewBroker(DefaultConfig(), wal)
+	broker2, err := NewBroker(DefaultConfig(), wal, nil)
 	if err != nil {
 		t.Fatalf("second start must not panic: %v", err)
 	}
@@ -588,7 +589,7 @@ func TestInMemoryBrokerRestartsAfterDeletingBoundQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	broker, err := NewBroker(DefaultConfig(), wal)
+	broker, err := NewBroker(DefaultConfig(), wal, nil)
 	if err != nil {
 		t.Fatalf("first start: %v", err)
 	}
@@ -607,7 +608,7 @@ func TestInMemoryBrokerRestartsAfterDeletingBoundQueue(t *testing.T) {
 	}
 	broker.Shutdown()
 
-	broker2, err := NewBroker(DefaultConfig(), wal)
+	broker2, err := NewBroker(DefaultConfig(), wal, nil)
 	if err != nil {
 		t.Fatalf("restart after deleting bound queue: %v", err)
 	}

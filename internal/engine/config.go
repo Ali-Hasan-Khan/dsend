@@ -13,7 +13,7 @@ type Config struct {
 
 func DefaultConfig() Config {
 	return Config{
-		AckTimeout:         time.Second * 100,
+		AckTimeout:         100 * time.Second,
 		RedeliveryInterval: 5 * time.Second,
 		ExpiryInterval:     1 * time.Second,
 		MaxRetries:         3,

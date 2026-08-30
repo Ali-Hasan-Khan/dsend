@@ -19,16 +19,16 @@ func runServer(args []string) error {
 	}
 	defer wal.Close()
 
+	Logger := logger.GetInstance()
+
 	cfg := engine.DefaultConfig()
-	broker, err := engine.NewBroker(cfg, wal)
+	broker, err := engine.NewBroker(cfg, wal, Logger)
 	if err != nil {
 		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-
-	Logger := logger.GetInstance()
 
 	server := server.New("127.0.0.1:8080", broker, Logger)
 
