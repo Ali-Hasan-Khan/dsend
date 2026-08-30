@@ -16,6 +16,12 @@ import (
 	"github.com/Ali-Hasan-Khan/dsend/internal/storage"
 )
 
+type mockLogger struct{}
+
+func (mockLogger) Infof(string, ...any)  {}
+func (mockLogger) Warnf(string, ...any)  {}
+func (mockLogger) Errorf(string, ...any) {}
+
 type mockWAL struct {
 	mu        sync.Mutex
 	appendErr error
@@ -48,6 +54,7 @@ func newTestQueueRuntime(wal *mockWAL) *QueueRuntime {
 	return NewQueueRuntime(
 		model.DefaultQueueName,
 		cfg,
+		&mockLogger{},
 		nil,
 		wal,
 		queue.NewRingBufferQueue(cfg.QueueSize),
@@ -325,6 +332,7 @@ func TestExpiryWorkerRetriesAfterWALFailure(t *testing.T) {
 	queue := NewQueueRuntime(
 		model.DefaultQueueName,
 		cfg,
+		&mockLogger{},
 		nil,
 		wal,
 		queue.NewRingBufferQueue(cfg.QueueSize),
@@ -425,6 +433,7 @@ func TestQueueRuntimeRecoveryFromMessages(t *testing.T) {
 	b := NewQueueRuntime(
 		model.DefaultQueueName,
 		cfg,
+		&mockLogger{},
 		msgs,
 		&mockWAL{},
 		queue.NewRingBufferQueue(10),
@@ -709,6 +718,7 @@ func TestRecoveredMessagesCanBeConsumed(t *testing.T) {
 	queue := NewQueueRuntime(
 		model.DefaultQueueName,
 		DefaultConfig(),
+		nil,
 		msgs,
 		&mockWAL{},
 		queue.NewRingBufferQueue(10),
@@ -775,6 +785,7 @@ func newRedeliveryBroker() *QueueRuntime {
 	return NewQueueRuntime(
 		model.DefaultQueueName,
 		cfg,
+		&mockLogger{},
 		nil,
 		&mockWAL{},
 		queue.NewRingBufferQueue(cfg.QueueSize),
@@ -934,6 +945,7 @@ func TestMessageMovesToDLQAfterMaxRetries(t *testing.T) {
 	queue := NewQueueRuntime(
 		model.DefaultQueueName,
 		cfg,
+		&mockLogger{},
 		nil,
 		&mockWAL{},
 		queue.NewRingBufferQueue(cfg.QueueSize),
@@ -1065,6 +1077,7 @@ func TestShutdownUnblocksBlockedPublisher(t *testing.T) {
 	queue := NewQueueRuntime(
 		model.DefaultQueueName,
 		cfg,
+		&mockLogger{},
 		nil,
 		&mockWAL{},
 		queue.NewRingBufferQueue(1),
@@ -1212,6 +1225,7 @@ func TestAck(t *testing.T) {
 				model.DefaultQueueName,
 				DefaultConfig(),
 				nil,
+				nil,
 				wal,
 				queue.NewRingBufferQueue(10),
 				queue.NewDLQ(),
@@ -1261,6 +1275,7 @@ func TestAckDoesNotChangeProducedCount(t *testing.T) {
 		model.DefaultQueueName,
 		DefaultConfig(),
 		nil,
+		nil,
 		&mockWAL{},
 		queue.NewRingBufferQueue(10),
 		queue.NewDLQ(),
@@ -1284,6 +1299,7 @@ func TestAckDoesNotChangeQueueDepth(t *testing.T) {
 	b := NewQueueRuntime(
 		model.DefaultQueueName,
 		DefaultConfig(),
+		nil,
 		nil,
 		&mockWAL{},
 		queue.NewRingBufferQueue(10),
@@ -1327,6 +1343,7 @@ func TestConsumerPrefetchLimitsOutstandingDeliveries(t *testing.T) {
 	queue := NewQueueRuntime(
 		model.DefaultQueueName,
 		cfg,
+		&mockLogger{},
 		nil,
 		&mockWAL{},
 		queue.NewRingBufferQueue(cfg.QueueSize),
@@ -1423,6 +1440,7 @@ func TestConsumerPrefetchSkipsFullConsumer(t *testing.T) {
 	queue := NewQueueRuntime(
 		model.DefaultQueueName,
 		cfg,
+		&mockLogger{},
 		nil,
 		&mockWAL{},
 		queue.NewRingBufferQueue(cfg.QueueSize),

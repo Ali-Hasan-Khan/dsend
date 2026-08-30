@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"time"
 
 	"github.com/Ali-Hasan-Khan/dsend/internal/protocol"
 )
@@ -29,8 +28,6 @@ func (c *Consumer) Receive(ctx context.Context) (*ReceivedMessage, error) {
 		return nil, ctx.Err()
 	default:
 	}
-
-	c.conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 
 	watchDone := make(chan struct{})
 	go func() {
@@ -58,13 +55,11 @@ func (c *Consumer) Receive(ctx context.Context) (*ReceivedMessage, error) {
 		return nil, errors.New(resp.Error)
 	}
 
-	r := &ReceivedMessage{
+	return &ReceivedMessage{
 		ID:       resp.Message.ID,
 		Payload:  resp.Message.Payload,
 		AckToken: resp.AckToken,
-	}
-
-	return r, nil
+	}, nil
 }
 
 func (c *Consumer) Ack(token string) error {

@@ -27,6 +27,7 @@ func newIntegrationQueueRuntimeWithPrefetch(queueSize, consumerPrefetch int) *Qu
 	return NewQueueRuntime(
 		model.DefaultQueueName,
 		cfg,
+		&mockLogger{},
 		nil,
 		&mockWAL{},
 		queue.NewRingBufferQueue(queueSize),

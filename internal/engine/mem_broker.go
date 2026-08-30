@@ -41,6 +41,7 @@ type InMemoryBroker struct {
 	closed  bool
 	cfg     Config
 	wal     storage.WAL
+	logger  Logger
 
 	queues      map[string]*QueueRuntime
 	tokenOwners map[string]*QueueRuntime
@@ -56,6 +57,7 @@ func NewInMemoryBroker(
 	wal storage.WAL,
 	queues map[string]*QueueRuntime,
 	tokenOwners map[string]*QueueRuntime,
+	log Logger,
 ) *InMemoryBroker {
 	exch := make(map[string]ex.Exchange)
 	exch[model.DefaultExchangeName] = ex.NewDirectExchange(model.DefaultExchangeName)
@@ -63,6 +65,7 @@ func NewInMemoryBroker(
 	broker := &InMemoryBroker{
 		cfg:         cfg,
 		wal:         wal,
+		logger:      log,
 		queues:      queues,
 		tokenOwners: tokenOwners,
 		exchanges:   exch,
@@ -78,6 +81,7 @@ func (b *InMemoryBroker) newQueueRuntime(
 	runtime := NewQueueRuntime(
 		name,
 		b.cfg,
+		b.logger,
 		messages,
 		b.wal,
 		queue.NewRingBufferQueue(max(b.cfg.QueueSize, len(messages))),

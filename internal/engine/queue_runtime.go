@@ -54,6 +54,7 @@ type QueueRuntime struct {
 
 	registerToken func(string)
 	removeToken   func(string)
+	logger        Logger
 
 	ackedCount        int
 	producedCount     int
@@ -64,6 +65,7 @@ type QueueRuntime struct {
 func NewQueueRuntime(
 	name string,
 	cfg Config,
+	log Logger,
 	messages []model.Message,
 	wal storage.WAL,
 	q Queue,
@@ -80,6 +82,7 @@ func NewQueueRuntime(
 		notifyDistributor: make(chan struct{}, 1),
 		wal:               wal,
 		config:            cfg,
+		logger:            log,
 	}
 
 	runtime.condProd = sync.NewCond(&runtime.mu)
@@ -428,6 +431,7 @@ func (q *QueueRuntime) processExpiredMessages() {
 				Queue:     q.name,
 				MessageID: item.Message.ID,
 			}); err != nil {
+				q.logger.Warnf("Failed to log type dlq: %v", err)
 				continue
 			}
 
@@ -453,6 +457,7 @@ func (q *QueueRuntime) processExpiredMessages() {
 			Message:   message,
 			MessageID: message.ID,
 		}); err != nil {
+			q.logger.Warnf("Failed to log type requeue: %v", err)
 			continue
 		}
 

@@ -20,6 +20,9 @@ type Server struct {
 	listenAddr string
 	broker     engine.Broker
 	logger     Logger
+
+	connsMu sync.Mutex
+	conns   map[net.Conn]struct{}
 }
 
 func New(listenAddr string, broker engine.Broker, log Logger) *Server {
@@ -27,6 +30,27 @@ func New(listenAddr string, broker engine.Broker, log Logger) *Server {
 		listenAddr: listenAddr,
 		broker:     broker,
 		logger:     log,
+		conns:      make(map[net.Conn]struct{}),
+	}
+}
+
+func (s *Server) trackConn(conn net.Conn) {
+	s.connsMu.Lock()
+	defer s.connsMu.Unlock()
+	s.conns[conn] = struct{}{}
+}
+
+func (s *Server) untrackConn(conn net.Conn) {
+	s.connsMu.Lock()
+	defer s.connsMu.Unlock()
+	delete(s.conns, conn)
+}
+
+func (s *Server) closeConns() {
+	s.connsMu.Lock()
+	defer s.connsMu.Unlock()
+	for conn := range s.conns {
+		conn.Close()
 	}
 }
 
@@ -44,6 +68,7 @@ func (s *Server) Start(ctx context.Context) error {
 		<-ctx.Done()
 		s.logger.Infof("Shutting down TCP server gracefully...")
 		listener.Close()
+		s.closeConns()
 	}()
 
 	for {
@@ -56,10 +81,21 @@ func (s *Server) Start(ctx context.Context) error {
 			continue
 		}
 
+		s.trackConn(conn)
+
+		select {
+		case <-ctx.Done():
+			s.untrackConn(conn)
+			conn.Close()
+			continue
+		default:
+		}
+
 		wg.Add(1)
 		go func(conn net.Conn) {
 			defer wg.Done()
-			s.handleConnection(conn, s.broker)
+			defer s.untrackConn(conn)
+			s.handleConnection(ctx, conn, s.broker)
 		}(conn)
 	}
 
