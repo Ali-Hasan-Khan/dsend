@@ -17,4 +17,5 @@ type Request struct {
 	ExchangeType string        `json:"exchange_type,omitempty"`
 	RoutingKey   string        `json:"routing_key,omitempty"`
 	BindingKey   string        `json:"binding_key,omitempty"`
+	Version      int           `json:"version,omitempty"`
 }

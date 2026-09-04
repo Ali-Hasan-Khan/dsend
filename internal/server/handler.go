@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"sync"
@@ -12,6 +13,10 @@ import (
 	"github.com/Ali-Hasan-Khan/dsend/internal/model"
 	"github.com/Ali-Hasan-Khan/dsend/internal/protocol"
 	"github.com/Ali-Hasan-Khan/dsend/internal/session"
+)
+
+var (
+	ErrUnsupportedVersion = errors.New("unsupported protocol version")
 )
 
 func errorString(err error) string {
@@ -25,6 +30,8 @@ func encode(mu *sync.Mutex, conn net.Conn, encoder *json.Encoder, resp *protocol
 	mu.Lock()
 	defer mu.Unlock()
 
+	resp.Version = protocol.CurrentVersion
+
 	if err := conn.SetWriteDeadline(time.Now().Add(100 * time.Second)); err != nil {
 		return err
 	}
@@ -32,7 +39,7 @@ func encode(mu *sync.Mutex, conn net.Conn, encoder *json.Encoder, resp *protocol
 }
 
 func (s *Server) handleConnection(ctx context.Context, conn net.Conn, b engine.Broker) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	clientAddr := conn.RemoteAddr().String()
 	s.logger.Infof("New client connected from: %s", clientAddr)
 
@@ -63,6 +70,18 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn, b engine.B
 				return
 			}
 			s.logger.Errorf("Error decoding JSON from %s: %v", clientAddr, err)
+			return
+		}
+
+		if req.Version != protocol.CurrentVersion && req.Version != 0 {
+			if err := encode(&mu, conn, encoder, &protocol.Response{
+				Version: protocol.CurrentVersion,
+				Success: false,
+				Error:   ErrUnsupportedVersion.Error(),
+			}); err != nil {
+				s.logger.Errorf("Error encoding JSON into %s: %v", clientAddr, err)
+				return
+			}
 			return
 		}
 

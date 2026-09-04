@@ -324,11 +324,7 @@ func TestQueueRuntimeStress(t *testing.T) {
 
 	deadline := time.After(10 * time.Second)
 
-	for {
-		if acked.Load() == totalMessages {
-			break
-		}
-
+	for acked.Load() != totalMessages {
 		select {
 		case <-deadline:
 			t.Fatal("timed out waiting for acknowledgements")

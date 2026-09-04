@@ -25,6 +25,9 @@ jobs:
       - name: Vet
         run: make vet
 
+      - name: Lint
+        run: make lint
+
       - name: Test
         run: make test
 

@@ -25,6 +25,7 @@ func NewProducer(addr string) (*Producer, error) {
 }
 
 func (c *Producer) do(req protocol.Request) (*protocol.Response, error) {
+	req.Version = protocol.CurrentVersion
 	if err := c.encoder.Encode(&req); err != nil {
 		return nil, err
 	}
@@ -79,8 +80,7 @@ func (c *Producer) Metrics(ctx context.Context) (*model.BrokerMetrics, error) {
 	default:
 	}
 
-	var req protocol.Request
-	req = protocol.Request{
+	req := protocol.Request{
 		Type: protocol.MetricsRequest,
 	}
 
@@ -108,8 +108,7 @@ func (c *Producer) QueueMetrics(ctx context.Context, queueName string) (*model.Q
 	default:
 	}
 
-	var req protocol.Request
-	req = protocol.Request{
+	req := protocol.Request{
 		Type:  protocol.MetricsRequest,
 		Queue: queueName,
 	}
@@ -367,9 +366,5 @@ func (c *Producer) ListExchanges(ctx context.Context) ([]string, error) {
 		return nil, errors.New(resp.Error)
 	}
 
-	exchanges := make([]string, 0, len(resp.Exchanges))
-	for _, exchange := range resp.Exchanges {
-		exchanges = append(exchanges, exchange)
-	}
-	return exchanges, nil
+	return resp.Exchanges, nil
 }

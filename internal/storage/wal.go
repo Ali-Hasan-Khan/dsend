@@ -134,7 +134,7 @@ func (f *FileWAL) Load() (RecoveredState, error) {
 		}
 		return RecoveredState{}, fmt.Errorf("error opening file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	state := RecoveredState{
 		PendingMessages:  make(map[string][]model.Message),

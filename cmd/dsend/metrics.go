@@ -15,13 +15,15 @@ import (
 func runMetrics(args []string) error {
 	metricsCmd := flag.NewFlagSet("metrics", flag.ExitOnError)
 	queueName := metricsCmd.String("queue", "", "target queue")
-	metricsCmd.Parse(args)
+	if err := metricsCmd.Parse(args); err != nil {
+		return err
+	}
 
 	c, err := client.NewProducer("localhost:8080")
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

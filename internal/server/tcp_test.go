@@ -5,8 +5,6 @@ import (
 	"net"
 	"testing"
 	"time"
-
-	"github.com/Ali-Hasan-Khan/dsend/internal/engine"
 )
 
 type mockLogger struct{}
@@ -14,10 +12,6 @@ type mockLogger struct{}
 func (mockLogger) Infof(string, ...any)  {}
 func (mockLogger) Warnf(string, ...any)  {}
 func (mockLogger) Errorf(string, ...any) {}
-
-type stubBroker struct {
-	engine.Broker
-}
 
 func TestShutdownClosesIdleConnections(t *testing.T) {
 	// Reserve a port, then hand the address to the server.
@@ -28,7 +22,7 @@ func TestShutdownClosesIdleConnections(t *testing.T) {
 	addr := probe.Addr().String()
 	probe.Close()
 
-	srv := New(addr, stubBroker{}, mockLogger{})
+	srv := New(addr, &mockBroker{}, mockLogger{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -80,7 +74,7 @@ func TestShutdownWhileAccepting(t *testing.T) {
 	addr := probe.Addr().String()
 	probe.Close()
 
-	srv := New(addr, stubBroker{}, mockLogger{})
+	srv := New(addr, &mockBroker{}, mockLogger{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

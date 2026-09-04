@@ -17,7 +17,7 @@ func runServer(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer wal.Close()
+	defer func() { _ = wal.Close() }()
 
 	Logger := logger.GetInstance()
 

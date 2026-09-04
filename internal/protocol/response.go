@@ -12,4 +12,5 @@ type Response struct {
 	AckToken  string              `json:"ack_token,omitempty"`
 	Metrics   model.BrokerMetrics `json:"broker_metrics,omitzero"`
 	Queues    []model.QueueMetric `json:"queues,omitzero"`
+	Version   int                 `json:"version,omitempty"`
 }

@@ -29,7 +29,7 @@ func (lh *LogHandler) Subscribe(observer appender.LogAppender) {
 
 func (lh *LogHandler) NotifyObservers(message model.LogMessage) {
 	for _, appender := range lh.appenders {
-		appender.Append(message)
+		_ = appender.Append(message)
 	}
 }
 
