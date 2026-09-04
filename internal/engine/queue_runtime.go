@@ -425,11 +425,11 @@ func (q *QueueRuntime) processExpiredMessages() {
 		if q.queue.Size() == q.queue.Capacity() {
 			continue // if broker full, skip
 		}
-		if item.Message.Retry >= q.config.MaxRetries {
+		if item.Retry >= q.config.MaxRetries {
 			if err := q.wal.Append(model.Record{
 				Type:      model.DeadLettered,
 				Queue:     q.name,
-				MessageID: item.Message.ID,
+				MessageID: item.ID,
 			}); err != nil {
 				q.logger.Warnf("Failed to log type dlq: %v", err)
 				continue

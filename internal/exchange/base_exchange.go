@@ -86,8 +86,6 @@ func (e *baseExchange) ListBindings() []model.Binding {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	bindings := make([]model.Binding, 0, len(e.bindings))
-	for _, b := range e.bindings {
-		bindings = append(bindings, b)
-	}
+	bindings = append(bindings, e.bindings...)
 	return bindings
 }

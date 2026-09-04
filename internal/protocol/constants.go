@@ -22,3 +22,7 @@ const (
 	DeleteExchangeRequest = "delete_exchange"
 	ListExchangesRequest  = "list_exchanges"
 )
+
+const (
+	CurrentVersion = 1
+)

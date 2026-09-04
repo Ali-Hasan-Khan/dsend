@@ -14,14 +14,16 @@ import (
 func runSubscribe(args []string) error {
 	subscribeCmd := flag.NewFlagSet("subscribe", flag.ExitOnError)
 	queueName := subscribeCmd.String("queue", "default", "target queue")
-	subscribeCmd.Parse(args)
+	if err := subscribeCmd.Parse(args); err != nil {
+		return err
+	}
 
 	fmt.Println("Initializing subscription client...")
 	c, err := client.NewConsumer("localhost:8080")
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

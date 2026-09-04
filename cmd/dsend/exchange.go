@@ -15,10 +15,12 @@ import (
 
 func runExchange(args []string) error {
 	exchangeCmd := flag.NewFlagSet("exchange", flag.ExitOnError)
-	exchangeCmd.Parse(args)
+	if err := exchangeCmd.Parse(args); err != nil {
+		return err
+	}
 	remainingArgs := exchangeCmd.Args()
 	if len(remainingArgs) < 1 {
-		return errors.New("Error: expected 'create', 'delete', or 'list' subcommand")
+		return errors.New("expected 'create', 'delete', or 'list' subcommand")
 	}
 
 	cmd := remainingArgs[0]
@@ -26,7 +28,7 @@ func runExchange(args []string) error {
 	switch cmd {
 	case "create":
 		if len(remainingArgs) < 3 {
-			return errors.New("Error: missing required <name> and <type> arguments")
+			return errors.New("missing required <name> and <type> arguments")
 		}
 		exchangeName := remainingArgs[1]
 		exchangeType := remainingArgs[2]
@@ -34,7 +36,7 @@ func runExchange(args []string) error {
 		if err != nil {
 			return err
 		}
-		defer c.Close()
+		defer func() { _ = c.Close() }()
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
@@ -47,7 +49,7 @@ func runExchange(args []string) error {
 		fmt.Println("Exchange created successfully")
 	case "delete":
 		if len(remainingArgs) < 2 {
-			return errors.New("Error: missing required <name> argument")
+			return errors.New("missing required <name> argument")
 		}
 
 		exchangeName := strings.Join(remainingArgs[1:], " ")
@@ -55,7 +57,7 @@ func runExchange(args []string) error {
 		if err != nil {
 			return err
 		}
-		defer c.Close()
+		defer func() { _ = c.Close() }()
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
@@ -71,7 +73,7 @@ func runExchange(args []string) error {
 		if err != nil {
 			return err
 		}
-		defer c.Close()
+		defer func() { _ = c.Close() }()
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
@@ -83,7 +85,7 @@ func runExchange(args []string) error {
 
 		fmt.Println("Exchanges:", exchanges)
 	default:
-		return errors.New("Error: invalid argument")
+		return errors.New("invalid argument")
 	}
 
 	return nil

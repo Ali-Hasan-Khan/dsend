@@ -28,7 +28,7 @@ func runPublish(args []string) error {
 
 	remainingArgs := publishCmd.Args()
 	if len(remainingArgs) < 2 {
-		return errors.New("Error: missing required <routingKey> and <payload> arguments")
+		return errors.New("missing required <routingKey> and <payload> arguments")
 	}
 
 	routingKey := remainingArgs[0]
@@ -37,7 +37,7 @@ func runPublish(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

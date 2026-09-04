@@ -50,14 +50,14 @@ func (s *Server) closeConns() {
 	s.connsMu.Lock()
 	defer s.connsMu.Unlock()
 	for conn := range s.conns {
-		conn.Close()
+		_ = conn.Close()
 	}
 }
 
 func (s *Server) Start(ctx context.Context) error {
 	listener, err := net.Listen("tcp", s.listenAddr)
 	if err != nil {
-		return fmt.Errorf("Failed to start server: %v", err)
+		return fmt.Errorf("failed to start server: %v", err)
 	}
 
 	s.logger.Infof("TCP server running on port %v....", s.listenAddr)
@@ -67,7 +67,7 @@ func (s *Server) Start(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 		s.logger.Infof("Shutting down TCP server gracefully...")
-		listener.Close()
+		_ = listener.Close()
 		s.closeConns()
 	}()
 
@@ -86,7 +86,7 @@ func (s *Server) Start(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			s.untrackConn(conn)
-			conn.Close()
+			_ = conn.Close()
 			continue
 		default:
 		}

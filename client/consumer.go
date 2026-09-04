@@ -33,7 +33,7 @@ func (c *Consumer) Receive(ctx context.Context) (*ReceivedMessage, error) {
 	go func() {
 		select {
 		case <-ctx.Done():
-			c.conn.Close()
+			_ = c.conn.Close()
 		case <-watchDone:
 		}
 	}()
@@ -63,8 +63,8 @@ func (c *Consumer) Receive(ctx context.Context) (*ReceivedMessage, error) {
 }
 
 func (c *Consumer) Ack(token string) error {
-	var req protocol.Request
-	req = protocol.Request{
+	req := protocol.Request{
+		Version:  protocol.CurrentVersion,
 		Type:     protocol.AckRequest,
 		AckToken: token,
 	}
@@ -77,11 +77,11 @@ func (c *Consumer) Ack(token string) error {
 }
 
 func (c *Consumer) Subscribe(queueName string) error {
-	var req protocol.Request
-	req = protocol.Request{
-		Type:  protocol.SubscribeRequest,
-		Queue: queueName,
-		ID:    c.id,
+	req := protocol.Request{
+		Version: protocol.CurrentVersion,
+		Type:    protocol.SubscribeRequest,
+		Queue:   queueName,
+		ID:      c.id,
 	}
 
 	if err := c.encoder.Encode(&req); err != nil {
@@ -92,9 +92,9 @@ func (c *Consumer) Subscribe(queueName string) error {
 }
 
 func (c *Consumer) Unsubscribe() error {
-	var req protocol.Request
-	req = protocol.Request{
-		Type: protocol.UnsubscribeRequest,
+	req := protocol.Request{
+		Version: protocol.CurrentVersion,
+		Type:    protocol.UnsubscribeRequest,
 	}
 
 	if err := c.encoder.Encode(&req); err != nil {
