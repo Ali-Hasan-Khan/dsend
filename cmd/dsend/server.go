@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,7 +14,15 @@ import (
 )
 
 func runServer(args []string) error {
-	wal, err := storage.NewFileWAL("./data/wal.log")
+	serverCmd := flag.NewFlagSet("server", flag.ExitOnError)
+	addr := serverCmd.String("addr", "127.0.0.1:8080", "server address")
+	walPath := serverCmd.String("wal", "./data/wal.log", "WAL path")
+
+	if err := serverCmd.Parse(args); err != nil {
+		return err
+	}
+
+	wal, err := storage.NewFileWAL(*walPath)
 	if err != nil {
 		return err
 	}
@@ -30,7 +39,7 @@ func runServer(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	server := server.New("127.0.0.1:8080", broker, Logger)
+	server := server.New(*addr, broker, Logger)
 
 	broker.Start(ctx)
 

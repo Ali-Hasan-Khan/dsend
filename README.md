@@ -206,7 +206,8 @@ Or start an already-built binary:
 .\dsend.exe server
 ```
 
-The broker listens on `127.0.0.1:8080` and persists to `./data/wal.log`.
+The broker listens on `127.0.0.1:8080` and persists to `./data/wal.log` by default.
+Override with flags: `./dsend server --addr 127.0.0.1:8081 --wal ./data/other.log`.
 
 ---
 
@@ -260,18 +261,18 @@ dsend exchange delete events
 
 ## Publishing Messages
 
-A publish targets an exchange and carries a routing key:
+A publish targets an exchange and carries a routing key (via `--routing-key`, default `default`):
 
 ### Linux / macOS
 
 ```bash
-./dsend publish --exchange default orders "Hello, DSend!"
+./dsend publish --exchange default --routing-key orders "Hello, DSend!"
 ```
 
 ### Windows
 
 ```powershell
-.\dsend.exe publish --exchange default orders "Hello, DSend!"
+.\dsend.exe publish --exchange default --routing-key orders "Hello, DSend!"
 ```
 
 Publishing a routing key that matches no binding returns `no route found`.
@@ -294,11 +295,10 @@ Publishing a routing key that matches no binding returns `no route found`.
 
 Messages are automatically acknowledged after successful processing. Omitting
 `--queue` subscribes to the compatibility `default` queue (no queue creation
-required). To reach the default queue without creating anything, publish to the
-`default` exchange with the `default` routing key:
+required). To reach the default queue without creating anything, publish without any arguments:
 
 ```text
-dsend publish --exchange default default "Hello, DSend!"
+dsend publish "Hello, DSend!"
 dsend subscribe
 ```
 
@@ -328,12 +328,13 @@ delivered — it is moved to the queue's DLQ and reflected in `DlqCount`.
 Publish a message that expires after 10 seconds:
 
 ```bash
-./dsend publish --exchange default --ttl 10s orders "Hello, DSend!"
+./dsend publish --exchange default --routing-key orders --ttl 10s "Hello, DSend!"
 ```
 
-`--ttl` accepts Go duration strings (`10s`, `5m`, `1h30m`) and must be given
-before the `<routingKey>` and `<payload>` arguments. Messages published without
-`--ttl` never expire.
+`--ttl` accepts Go duration strings (`10s`, `5m`, `1h30m`). All flags
+(`--exchange`, `--routing-key`, `--ttl`, `--addr`) must be given before the
+`<payload>` argument — Go `flag` parsing stops at the first positional.
+Messages published without `--ttl` never expire.
 
 Expiry is anchored to the **broker's clock**: when a message is accepted, the
 broker computes `ExpiryAt = now + ttl`. Expiry is enforced at delivery time, so

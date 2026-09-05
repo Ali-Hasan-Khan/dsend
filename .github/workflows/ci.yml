@@ -75,7 +75,7 @@ jobs:
           ./bin/dsend exchange create events topic
           ./bin/dsend queue create orders
           ./bin/dsend queue bind events orders "orders.*"
-          ./bin/dsend publish --exchange events "orders.created" "hello from CI"
+          ./bin/dsend publish --exchange events --routing-key "orders.created" "hello from CI"
           output="$(timeout 15 ./bin/dsend subscribe --queue orders || true)"
           printf '%s\n' "$output"
           printf '%s\n' "$output" | grep -q "hello from CI"

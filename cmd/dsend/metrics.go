@@ -14,12 +14,13 @@ import (
 
 func runMetrics(args []string) error {
 	metricsCmd := flag.NewFlagSet("metrics", flag.ExitOnError)
+	addr := metricsCmd.String("addr", "127.0.0.1:8080", "server address")
 	queueName := metricsCmd.String("queue", "", "target queue")
 	if err := metricsCmd.Parse(args); err != nil {
 		return err
 	}
 
-	c, err := client.NewProducer("localhost:8080")
+	c, err := client.NewProducer(*addr)
 	if err != nil {
 		return err
 	}

@@ -493,14 +493,17 @@ err = p.Publish(ctx, "default", "orders", "order-1042 created", 0)</code></pre>
           <span class="code-block-name">cli</span>
           <button class="code-copy" data-copy>Copy</button>
         </div>
-<pre><code><span class="prompt">$</span> ./dsend publish --exchange default --ttl 10s orders "order-1042 created"
+<pre><code><span class="prompt">$</span> ./dsend publish --exchange default --routing-key orders --ttl 10s "order-1042 created"
 <span class="tok-str">Message Sent successfully</span></code></pre>
       </div>
       <p>
         <code class="inline-code">--ttl</code> accepts Go duration strings (<code class="inline-code">10s</code>,
-        <code class="inline-code">5m</code>, <code class="inline-code">1h30m</code>) and must appear before the
-        <code class="inline-code">&lt;routingKey&gt;</code> and <code class="inline-code">&lt;payload&gt;</code>
-        arguments. Messages published without <code class="inline-code">--ttl</code> never expire.
+        <code class="inline-code">5m</code>, <code class="inline-code">1h30m</code>). All flags
+        (<code class="inline-code">--exchange</code>, <code class="inline-code">--routing-key</code>,
+        <code class="inline-code">--ttl</code>) must appear before the
+        <code class="inline-code">&lt;payload&gt;</code> argument — Go
+        <code class="inline-code">flag</code> parsing stops at the first positional.
+        Messages published without <code class="inline-code">--ttl</code> never expire.
       </p>
     </section>
 
@@ -617,7 +620,7 @@ if err := p.Publish(ctx, "events", "orders.shipped", "order-1042 shipped", 0); e
 <span class="prompt">$</span> ./dsend queue bind events orders "orders.*"
 <span class="tok-str">Queue bounded successfully</span>
 
-<span class="prompt">$</span> ./dsend publish --exchange events "orders.created" "order-1042 created"
+<span class="prompt">$</span> ./dsend publish --exchange events --routing-key "orders.created" "order-1042 created"
 <span class="tok-str">Message Sent successfully</span>
 
 <span class="prompt">$</span> ./dsend exchange list
@@ -715,8 +718,8 @@ fmt.Println(q.DlqCount)</code></pre>
             <td>Starts the broker on <code>127.0.0.1:8080</code> with the WAL at <code>./data/wal.log</code>.</td>
           </tr>
           <tr>
-            <td><code>dsend publish [--exchange &lt;name&gt;] [--ttl &lt;duration&gt;] &lt;routingKey&gt; "&lt;message&gt;"</code></td>
-            <td>Publishes a message through the named exchange under the given routing key. Defaults to the <code>default</code> exchange. <code>--ttl</code> sets the message's time-to-live (e.g. <code>10s</code>, <code>5m</code>) and must precede the positional arguments.</td>
+            <td><code>dsend publish [--exchange &lt;name&gt;] [--routing-key &lt;key&gt;] [--ttl &lt;duration&gt;] "&lt;message&gt;"</code></td>
+            <td>Publishes a message through the named exchange under the given routing key (default <code>default</code>). Defaults to the <code>default</code> exchange. <code>--ttl</code> sets the message's time-to-live (e.g. <code>10s</code>, <code>5m</code>). All flags must precede the positional <code>&lt;message&gt;</code> argument.</td>
           </tr>
           <tr>
             <td><code>dsend subscribe [--queue &lt;name&gt;]</code></td>

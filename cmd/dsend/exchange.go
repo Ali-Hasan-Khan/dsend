@@ -15,6 +15,8 @@ import (
 
 func runExchange(args []string) error {
 	exchangeCmd := flag.NewFlagSet("exchange", flag.ExitOnError)
+	addr := exchangeCmd.String("addr", "127.0.0.1:8080", "server address")
+
 	if err := exchangeCmd.Parse(args); err != nil {
 		return err
 	}
@@ -28,11 +30,11 @@ func runExchange(args []string) error {
 	switch cmd {
 	case "create":
 		if len(remainingArgs) < 3 {
-			return errors.New("missing required <name> and <type> arguments")
+			return errors.New("missing required <name> and <type> positional arguments")
 		}
 		exchangeName := remainingArgs[1]
 		exchangeType := remainingArgs[2]
-		c, err := client.NewProducer("localhost:8080")
+		c, err := client.NewProducer(*addr)
 		if err != nil {
 			return err
 		}
@@ -53,7 +55,7 @@ func runExchange(args []string) error {
 		}
 
 		exchangeName := strings.Join(remainingArgs[1:], " ")
-		c, err := client.NewProducer("localhost:8080")
+		c, err := client.NewProducer(*addr)
 		if err != nil {
 			return err
 		}
@@ -69,7 +71,7 @@ func runExchange(args []string) error {
 
 		fmt.Println("Exchange deleted successfully")
 	case "list":
-		c, err := client.NewProducer("localhost:8080")
+		c, err := client.NewProducer(*addr)
 		if err != nil {
 			return err
 		}
