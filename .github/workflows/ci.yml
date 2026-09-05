@@ -33,6 +33,9 @@ jobs:
       - name: Test
         run: make test
 
+      - name: E2E tests
+        run: go test -count=1 -v -run 'TestE2E' ./internal/server/
+
       - name: Test with race detector
         run: make test-race
 
