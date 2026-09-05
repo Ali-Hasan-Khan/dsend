@@ -14,12 +14,13 @@ import (
 func runSubscribe(args []string) error {
 	subscribeCmd := flag.NewFlagSet("subscribe", flag.ExitOnError)
 	queueName := subscribeCmd.String("queue", "default", "target queue")
+	addr := subscribeCmd.String("addr", "127.0.0.1:8080", "server address")
 	if err := subscribeCmd.Parse(args); err != nil {
 		return err
 	}
 
 	fmt.Println("Initializing subscription client...")
-	c, err := client.NewConsumer("localhost:8080")
+	c, err := client.NewConsumer(*addr)
 	if err != nil {
 		return err
 	}

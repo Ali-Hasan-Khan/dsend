@@ -15,6 +15,7 @@ import (
 
 func runQueue(args []string) error {
 	queueCmd := flag.NewFlagSet("queue", flag.ExitOnError)
+	addr := queueCmd.String("addr", "127.0.0.1:8080", "server address")
 	if err := queueCmd.Parse(args); err != nil {
 		return err
 	}
@@ -28,10 +29,10 @@ func runQueue(args []string) error {
 	switch cmd {
 	case "create":
 		if len(remainingArgs) < 2 {
-			return errors.New("missing required <name> argument")
+			return errors.New("missing required <name> positional argument")
 		}
 		queueName := strings.Join(remainingArgs[1:], " ")
-		c, err := client.NewProducer("localhost:8080")
+		c, err := client.NewProducer(*addr)
 		if err != nil {
 			return err
 		}
@@ -48,11 +49,11 @@ func runQueue(args []string) error {
 		fmt.Println("Queue created successfully")
 	case "delete":
 		if len(remainingArgs) < 2 {
-			return errors.New("missing required <name> argument")
+			return errors.New("missing required <name> positional argument")
 		}
 
 		queueName := strings.Join(remainingArgs[1:], " ")
-		c, err := client.NewProducer("localhost:8080")
+		c, err := client.NewProducer(*addr)
 		if err != nil {
 			return err
 		}
@@ -68,7 +69,7 @@ func runQueue(args []string) error {
 
 		fmt.Println("Queue deleted successfully")
 	case "list":
-		c, err := client.NewProducer("localhost:8080")
+		c, err := client.NewProducer(*addr)
 		if err != nil {
 			return err
 		}
@@ -85,13 +86,13 @@ func runQueue(args []string) error {
 		fmt.Println("Queues:", queues)
 	case "bind":
 		if len(remainingArgs) < 4 {
-			return errors.New("missing required <exchangeName>, <queueName>, and <bindingKey> arguments")
+			return errors.New("missing required <exchangeName>, <queueName>, and <bindingKey> positional arguments")
 		}
 
 		exchangeName := remainingArgs[1]
 		queueName := remainingArgs[2]
 		bindingKey := strings.Join(remainingArgs[3:], " ")
-		c, err := client.NewProducer("localhost:8080")
+		c, err := client.NewProducer(*addr)
 		if err != nil {
 			return err
 		}
@@ -108,13 +109,13 @@ func runQueue(args []string) error {
 		fmt.Println("Queue bounded successfully")
 	case "unbind":
 		if len(remainingArgs) < 4 {
-			return errors.New("missing required <exchangeName>, <queueName>, and <bindingKey> arguments")
+			return errors.New("missing required <exchangeName>, <queueName>, and <bindingKey> positional arguments")
 		}
 
 		exchangeName := remainingArgs[1]
 		queueName := remainingArgs[2]
 		bindingKey := strings.Join(remainingArgs[3:], " ")
-		c, err := client.NewProducer("localhost:8080")
+		c, err := client.NewProducer(*addr)
 		if err != nil {
 			return err
 		}

@@ -74,7 +74,7 @@
 <span class="prompt">$</span> ./dsend queue bind default orders orders
 <span class="tok-str">Queue bounded successfully</span>
 
-<span class="prompt">$</span> ./dsend publish --exchange default orders "order-1042 created"
+<span class="prompt">$</span> ./dsend publish --exchange default --routing-key orders "order-1042 created"
 <span class="tok-str">Message Sent successfully</span>
 
 <span class="prompt">$</span> ./dsend subscribe --queue orders
